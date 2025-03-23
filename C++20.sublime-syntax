@@ -1,4 +1,5 @@
 # Based on work implemented by sublimehq at https://github.com/sublimehq/Packages/blob/master/C%2B%2B/C%2B%2B.sublime-syntax
+
 %YAML 1.2
 ---
 # http://www.sublimetext.com/docs/3/syntax.html
@@ -73,9 +74,10 @@ variables:
   modifiers: '{{storage_classes}}|{{type_qualifier}}|{{compiler_directive}}|{{constant_expression_specifiers}}'
   non_angle_brackets: '(?=<<|<=)'
   module_identifier: '{{identifier}}(?:\.{{identifier}})*'
+  nested-name-specifier-var: '(?:::\s*)?(?:{{identifier}}\s*::\s*)*'
 
-  regular: '[^(){}&;*^%=<>-]*'
-  regular_plus: '[^(){}&;*^%=<>-]+'
+  regular: '[^(){};^%=<>-]*'
+  regular_plus: '[^(){};^%=<>-]+'
   paren_open: (?:\(
   paren_close: '\))?'
   generic_open: (?:{{regular_plus}}(?:<
@@ -261,8 +263,56 @@ contexts:
         2: punctuation.accessor.double-colon.c++
 
   function-specifiers:
-    - match: \b(const|final|noexcept|override)\b
+    - match: '(?:\bconst\b\s*)?(?:\bvolatile\b\s*)?(?:\bconst\b\s*)?&{0,2}'
       scope: storage.modifier.c++
+    - match: \b(final|override)\b
+      scope: storage.modifier.c++
+    - match: '(?=\bnoexcept\b)'
+      push: function-exception-specifier
+    - match: '(?=\brequires\b)'
+      set: requires-clause
+    - match: (?=\S)
+      pop: true
+
+
+  function-exception-specifier:
+    - match: '\bnoexcept\b'
+      scope: storage.modifier.c++
+      push:
+        - match: '\s*(?=->|=|\{|requires\b)'
+          pop: true
+        - include: preprocessor-workaround-eat-macro-before-identifier
+        # TODO: add attributes
+        - match: '\('
+          scope: meta.group.c++ punctuation.section.group.begin.c++
+          set:
+            - meta_content_scope: meta.function-call.c++ meta.group.c++
+            - match: '\)'
+              scope: meta.function-call.c++ meta.group.c++ punctuation.section.group.end.c++
+              pop: true
+            - include: expressions
+        - match: (?=\S)
+          pop: true
+    - match: (?=\S)
+      pop: true
+
+  constructor-explicit-specifier:
+    - match: '\bexplicit\b'
+      scope: storage.modifier.c++
+      push:
+        - match: '\('
+          scope: meta.group.c++ punctuation.section.group.begin.c++
+          set:
+            - meta_content_scope: meta.function-call.c++ meta.group.c++
+            - match: '\)'
+              scope: meta.function-call.c++ meta.group.c++ punctuation.section.group.end.c++
+              pop: 2
+            - include: expressions
+        - include: preprocessor-workaround-eat-macro-before-identifier
+        - match: '(?={{identifier}})'
+          pop: 2
+    - match: (?=\S)
+      scope: invalid.illegal.unexpected-character.c++
 
   #############################################################################
   # The following are C++-specific contexts that should not be reused. This is
@@ -275,6 +325,8 @@ contexts:
     - match: '(?=\btemplate\b)'
       push:
         - include: template
+        - match: '(?=\brequires\b)'
+          set: requires-clause
         - match: (?=\S)
           set: global-modifier
     - include: using-namespace
@@ -387,6 +439,8 @@ contexts:
     - include: keywords-parens
     - include: keywords
     - include: numbers
+    - match: '(?=\brequires\b)'
+      push: requires-expression
     # Prevent a '<' from getting scoped as the start of another template
     # parameter list, if in reality a less-than-or-equals sign or
     # three-way comparison operator is meant.
@@ -394,6 +448,7 @@ contexts:
       scope: keyword.operator.comparison.c
 
   early-expressions-after-generic-type:
+    - include: pointer-member-arrow
     - include: members-arrow
     - include: operators
     - include: members-dot
@@ -448,6 +503,8 @@ contexts:
 
   operators:
     - include: scope:source.c#operators
+    - match: '->\*'
+      scope: keyword.operator.arithmetic.c++
 
   modifiers:
     - include: unique-modifiers
@@ -566,7 +623,7 @@ contexts:
             - include: expressions-minus-generic-type-function-call
 
   keywords-parens:
-    - match: '\b(alignof|typeid|static_assert|sizeof)\b\s*(\()'
+    - match: '\b(noexcept|alignof|typeid|static_assert|sizeof)\b\s*(\()'
       captures:
         1: keyword.operator.word.c++
         2: meta.group.c++ punctuation.section.group.begin.c++
@@ -734,6 +791,167 @@ contexts:
       pop: true
     - include: expressions
 
+  requires-expression-params:
+    - meta_content_scope: meta.function.c++
+    - include: comments
+    - match: \(
+      scope: meta.function.parameters.c++ meta.group.c++ punctuation.section.group.begin.c++
+      set:
+        - meta_content_scope: meta.function.parameters.c++ meta.group.c++
+        - match : \)
+          scope: punctuation.section.group.end.c++
+          set: requirement-seq
+        - match: '{{identifier}}(?=\s*(\[|,|\)))'
+          scope: variable.parameter.c++
+        - include: expressions-minus-generic-type
+        - include: scope:source.c#preprocessor-line-continuation
+
+  requirement-seq:
+    - meta_content_scope: meta.constraint.c++
+    - include: comments
+    - match: '{'
+      scope: punctuation.section.block.begin.c++
+      set:
+        - meta_content_scope: meta.constraint.c++
+        - match: '}'
+          scope: punctuation.section.block.end.c++
+          pop: true # pops out of 'requirement-seq'
+        - match: '\brequires\s+' # Nested requirements
+          scope: keyword.control.c++
+          push:
+            - match: ';'
+              scope: punctuation.terminator.c++
+              pop: true
+            - include: expressions
+        - match: '\s*(?=\{)' # Compound requirements
+          push:
+            - meta_content_scope: meta.constraint.compound.c++
+            - match: '{'
+              scope: punctuation.section.block.begin.c++
+              set:
+                - meta_content_scope: meta.constraint.compound.c++
+                - match: '}'
+                  scope: punctuation.section.block.end.c++
+                  set:
+                    - match: '\s*noexcept\b'
+                      scope: storage.modifier.c++
+                    - match: '\s*(->)'
+                      captures: 
+                        1: punctuation.separator.c++
+                      set: function-definition-trailing-return
+                    - match: ';'
+                      scope: punctuation.terminator.c++
+                      pop: true
+                - include: expressions
+        - include: expressions # covers Simple and Type requirements
+
+  requires-expression:
+    - match: 'requires'
+      scope: keyword.declaration.requires-expression.c++
+      set:
+        - match: '\s*(?=\()'
+          set: requires-expression-params
+        - match: '\s*(?=\{)'
+          set: requirement-seq
+
+  constraint-clause-constant-continue:
+    - match: '(?=::)'
+      # Both clang and GCC has this behaviour where scope resolution extends from the constraint
+      set: constraint-clause-constant
+    - match: '(?=\S)'
+      set: constraint-expresion-continue
+
+  constraint-clause-constant:
+    - match: '(?<=::)\s*(template)\s+'
+      captures:
+        1: keyword.declaration.template.c++
+    - match: '{{identifier}}\s*(<)'
+      captures:
+        1: meta.generic.c++ punctuation.definition.generic.begin.c++
+      set:
+        - meta_content_scope: meta.generic.c++
+        - match: '>'
+          scope: meta.generic.c++ punctuation.definition.generic.end.c++
+          set: constraint-clause-constant-continue
+        - include: expressions
+    - match: '{{nested-name-specifier-var}}'
+    - match: '{{identifier}}'
+      set: constraint-clause-constant-continue
+    - match: '(?=\S)'
+      scope: invalid.illegal.unexpected-character.c++
+
+  constraint-expresion-continue:
+    - include: comments
+    - include: preprocessor-expressions
+    - match: ';' # concept termination
+      captures:
+        1: punctuation.terminator.c++
+      pop: true
+    - match: '(?=\{)' # Function termination
+      pop: true
+    - match: '(?=\b({{before_tag}})\b)'
+      pop: true
+    - include: preprocessor-workaround-eat-macro-before-identifier
+    - match: '(?=\b({{basic_types}}|{{identifier}})\b)' # function template termination
+      pop: true
+    - match: '&&|\|\|'
+      scope: keyword.operator.arithmetic.c
+      set: constraint-expresion
+
+  constraint-expresion:
+    - match: '(?<=})' # after requires expression
+      set: constraint-expresion-continue
+    - include: comments
+    - include: preprocessor-expressions
+    - match: '\s*(?=requires\b)'
+      push: requires-expression
+    - match: '\s*(true|false)\b'
+      scope: constant.language.boolean.c++
+      set: constraint-expresion-continue
+    - match: '\s*(?=\()'
+      set:
+        - match: '(?<=\))' # after parenthesized expression
+          set: constraint-expresion-continue
+        - include: parens # parenthesized expression
+    - match: '(?=\S)'
+      set: constraint-clause-constant
+
+  requires-clause:
+    - include: comments
+    - include: preprocessor-expressions
+    - match: \brequires\s+
+      scope: keyword.control.c++
+      set: constraint-expresion
+
+  template-parameter-list:
+    - meta_content_scope: meta.template.c++
+    - match: <
+      scope: punctuation.definition.generic.begin.c++
+      set:
+        - meta_content_scope: meta.template.c++
+        - match : '>'
+          scope: meta.template.c++ punctuation.definition.generic.end.c++
+          pop: true
+        - match: \.{3}
+          scope: keyword.operator.variadic.c++
+        - match: \b(typename|{{before_tag}})\b
+          scope: keyword.declaration.c++
+        - include: template # include template here for nested templates
+        - include: template-common
+        - include: generic-type
+        - match: '{{identifier}}(?=\s*(\[|,|>|=))'
+          scope: variable.parameter.template.c++
+        - match: '='
+          scope: keyword.operator.assignment.c++
+          push:
+            - match: '(?=,|>)'
+              pop: true
+            - include: expressions
+            - include: scope:source.c#preprocessor-line-continuation
+        
+    - match: (?=\S)
+      pop: true
+
   template:
     - match: \btemplate\b
       scope: keyword.declaration.template.c++
@@ -742,19 +960,8 @@ contexts:
         # Explicitly include comments here at the top, in order to NOT match the
         # \S lookahead in the case of comments.
         - include: comments
-        - match: <
-          scope: punctuation.definition.generic.begin.c++
-          set:
-            - meta_content_scope: meta.template.c++
-            - match: '>'
-              scope: meta.template.c++ punctuation.definition.generic.end.c++
-              pop: true
-            - match: \.{3}
-              scope: keyword.operator.variadic.c++
-            - match: \b(typename|{{before_tag}})\b
-              scope: keyword.declaration.c++
-            - include: template # include template here for nested templates
-            - include: template-common
+        - match: '(?=<)'
+          set: template-parameter-list
         - match: (?=\S)
           set:
             - meta_content_scope: meta.template.c++
@@ -973,9 +1180,12 @@ contexts:
     # This needs to be before operators in the
     # early-expressions-after-generic-type context because otherwise the "->"
     # from the C language will match.
-    - match: ->
+    - match: '\b(?<!operator)\b\s*->'
       scope: punctuation.accessor.arrow.c++
       push: members-after-accessor-junction
+  pointer-member-arrow:
+    - match: '\b(?<!operator)\b\s*->\*'
+      scope: keyword.operator.arithmetic.c++
 
   using-alias:
     # consume keyword if followed by typename
@@ -986,6 +1196,21 @@ contexts:
       captures:
         1: keyword.control.c++
         2: entity.name.type.using.c++
+
+  concept-id:
+    - include: preprocessor-workaround-eat-macro-before-identifier
+    - match: '\b{{identifier}}\b'
+      scope: meta.trait.concept.name.c++ entity.name.trait.concept.c++
+      set:
+        - match: '\s*(=)'
+          captures:
+            1: keyword.operator.assignment.c keyword.operator.assignment.c++
+          set: constraint-expresion
+
+  concept:
+    - match: '\bconcept\b'
+      scope: keyword.declaration.trait.concept.c++
+      set: concept-id
 
   typedef:
     - match: \btypedef\b
@@ -1070,6 +1295,8 @@ contexts:
             2: entity.name.function.destructor.c++
         - match: '(?=[^\w\s])'
           set: function-definition-params
+    - match: '(?=\bconcept\b)'
+      push: concept
     # If we see a path ending in :: before a newline, we don't know if it is
     # a constructor or destructor, or a long return type, so we are just going
     # to treat it like a regular function. Most likely it is a constructor,
@@ -1496,6 +1723,8 @@ contexts:
     - match: '(?=\btemplate\b)'
       push:
         - include: template
+        - match: (?=\brequires\b)
+          push: requires-clause
         - match: (?=\S)
           set: data-structures-modifier
     - include: using-namespace
@@ -1535,6 +1764,8 @@ contexts:
         - match: '(?=\S)'
           pop: true
     - include: comments
+    - match: '(?=\bexplicit\b)'
+      push: constructor-explicit-specifier
     - include: modifiers-parens
     - include: modifiers
     - match: '\bstatic_assert(?=\s*\()'
@@ -2248,6 +2479,10 @@ contexts:
         - include: identifiers
         - match: '(?=\S)'
           pop: true
+    - match: '\s*(requires)\b'
+      captures:
+        1: keyword.control.c++
+
     - include: expressions
 
   preprocessor-practical-workarounds:
