@@ -854,14 +854,14 @@ contexts:
         - match: '\s*(?=\{)'
           set: requirement-seq
 
-  constraint-clause-constant-continue:
+  constraint-id-expression-continue:
     - match: '(?=::)'
       # Both clang and GCC has this behaviour where scope resolution extends from the constraint
-      set: constraint-clause-constant
+      set: constraint-id-expression
     - match: '(?=\S)'
-      set: constraint-expresion-continue
+      set: constraint-logical-or-expression-continue
 
-  constraint-clause-constant:
+  constraint-id-expression:
     - match: '(?<=::)\s*(template)\s+'
       captures:
         1: keyword.declaration.template.c++
@@ -872,15 +872,15 @@ contexts:
         - meta_content_scope: meta.generic.c++
         - match: '>'
           scope: meta.generic.c++ punctuation.definition.generic.end.c++
-          set: constraint-clause-constant-continue
+          set: constraint-id-expression-continue
         - include: expressions
     - match: '{{nested-name-specifier-var}}'
     - match: '{{identifier}}'
-      set: constraint-clause-constant-continue
+      set: constraint-id-expression-continue
     - match: '(?=\S)'
       scope: invalid.illegal.unexpected-character.c++
 
-  constraint-expresion-continue:
+  constraint-logical-or-expression-continue:
     - include: comments
     - include: preprocessor-expressions
     - match: ';' # concept termination
@@ -896,32 +896,32 @@ contexts:
       pop: true
     - match: '&&|\|\|'
       scope: keyword.operator.arithmetic.c
-      set: constraint-expresion
+      set: constraint-logical-or-expression
 
-  constraint-expresion:
+  constraint-logical-or-expression:
     - match: '(?<=})' # after requires expression
-      set: constraint-expresion-continue
+      set: constraint-logical-or-expression-continue
     - include: comments
     - include: preprocessor-expressions
     - match: '\s*(?=requires\b)'
       push: requires-expression
     - match: '\s*(true|false)\b'
       scope: constant.language.boolean.c++
-      set: constraint-expresion-continue
+      set: constraint-logical-or-expression-continue
     - match: '\s*(?=\()'
       set:
         - match: '(?<=\))' # after parenthesized expression
-          set: constraint-expresion-continue
+          set: constraint-logical-or-expression-continue
         - include: parens # parenthesized expression
     - match: '(?=\S)'
-      set: constraint-clause-constant
+      set: constraint-id-expression
 
   requires-clause:
     - include: comments
     - include: preprocessor-expressions
     - match: \brequires\s+
       scope: keyword.control.c++
-      set: constraint-expresion
+      set: constraint-logical-or-expression
 
   template-parameter-list:
     - meta_content_scope: meta.template.c++
@@ -1205,7 +1205,11 @@ contexts:
         - match: '\s*(=)'
           captures:
             1: keyword.operator.assignment.c keyword.operator.assignment.c++
-          set: constraint-expresion
+          set:
+            - match: ';'
+              scope: punctuation.terminator.c++
+              pop: true
+            - include: expressions
 
   concept:
     - match: '\bconcept\b'
