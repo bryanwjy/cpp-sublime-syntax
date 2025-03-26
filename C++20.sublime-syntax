@@ -269,17 +269,13 @@ contexts:
     - match: '(?=\bnoexcept\b)'
       push: function-exception-specifier
     - match: '(?=\brequires\b)'
-      set: requires-clause
-    - match: (?=\S)
-      pop: true
+      push: requires-clause
 
 
   function-exception-specifier:
     - match: '\bnoexcept\b'
       scope: storage.modifier.c++
       push:
-        - match: '\s*(?=->|=|\{|requires\b)'
-          pop: true
         - include: preprocessor-workaround-eat-macro-before-identifier
         # TODO: add attributes
         - match: '\('
@@ -292,8 +288,6 @@ contexts:
             - include: expressions
         - match: (?=\S)
           pop: true
-    - match: (?=\S)
-      pop: true
 
   constructor-explicit-specifier:
     - match: '\bexplicit\b'
