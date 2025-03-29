@@ -1,0 +1,2102 @@
+%YAML 1.2
+---
+# http://www.sublimetext.com/docs/3/syntax.html
+name: formal-C++
+scope: formal.c++
+
+file_extensions:
+  - cpp
+  - cc
+  - cp
+  - cxx
+  - c++
+  - C
+  - h
+  - hh
+  - hpp
+  - hxx
+  - h++
+  - inl
+  - ipp
+  - ixx
+  - cppm
+
+variables:
+  identifier: '\b[[:alpha:]_][[:alnum:]_]*\b'
+  # number digits
+  bin_digit: '[01'']'
+  oct_digit: '[0-7'']'
+  dec_digit: '[\d'']'
+  hex_digit: '[\h'']'
+  dec_digits: '(?:\d(?:{{dec_digit}}*\d)?)'
+  # number exponents
+  dec_exponent: '(?:[eE][-+]?{{dec_digit}}*)'
+  hex_exponent: '(?:[pP][-+]?{{dec_digit}}*)'
+  bin_suffix: '[2-9a-zA-Z_][[:alnum:]_]*'
+  oct_suffix: '[8-9g-zG-Z_][[:alnum:]_]*'
+  dec_suffix: '[a-zA-Z_][[:alnum:]_]*'
+  hex_suffix: '[g-zG-Z_][[:alnum:]_]*'
+  float_suffix: '[fF]'
+  encoding-prefix: 'u8|u|U|L'
+  nested-name-specifier-lookahead: '(?=(?:(::)\s*)?(?:{{identifier}}|\bdecltype\b))'
+
+  macro_identifier: \b[[:upper:]_][[:upper:][:digit:]_]{2,}\b # only uppercase, at least 3 chars
+  # type-id-regex:
+
+contexts:
+  main:
+    - include: common-context-prefix
+    - include: stray-closing-group
+
+  stray-closing-group:
+    - match: '\)|\]|}'
+      scope: invalid.illegal.stray-bracket-end.c++
+
+  ignore-trailing-backslash:
+    - match: '\s*\\$'
+
+  common-context-prefix:
+    - include: comments
+    - include: ignore-trailing-backslash
+
+  precondition-specifier:
+    - match: '\bpre\b'
+      scope: keyword.declaration.c++
+      push:
+        - include: common-context-prefix
+        - include: attribute-specifier-seq
+        - match: '\('
+          scope: meta.group.c++ punctuation.section.group.begin.c++
+          set:
+            - include: common-context-prefix
+            - match: '\)'
+              scope: meta.group.c++ punctuation.section.group.end.c++
+              pop: true
+            - include: conditional-expression
+
+  postcondition-specifier:
+    - match: '\bpost\b'
+      scope: keyword.declaration.c++
+      push:
+        - include: comments
+        - include: ignore-trailing-backslash
+        - include: attribute-specifier-seq
+        - match: '\('
+          scope: meta.group.c++ punctuation.section.group.begin.c++
+          set:
+            - include: common-context-prefix
+            - match: ':'
+              scope: punctuation.separator.c++
+              set:
+                - include: common-context-prefix
+                - match: '\)'
+                  scope: meta.group.c++ punctuation.section.group.end.c++
+                  pop: true
+                - include: conditional-expression    
+            - include: attribute-specifier-seq
+            - match: '\)'
+              scope: meta.group.c++ punctuation.section.group.end.c++
+              pop: true
+            - include: conditional-expression
+
+
+  function-contract-specifier:
+    - include: precondition-specifier
+    - include: postcondition-specifier
+
+  function-contract-specifier-seq:
+    - include: function-contract-specifier
+
+  init-declarator:
+    - include: declarator
+    - include: initializer
+    - match: '\brequires\b'
+      scope: keyword.control.c++
+      set: constraint-logical-or-expression
+    - include: function-contract-specifier-seq
+
+  init-declarator-list:
+    - include: init-declarator
+    - match: ','
+      scope: punctuation.separator.c++
+
+  declarator:
+    - include: ptr-declarator
+    - match: '\('
+      scope: meta.group.c++ punctuation.section.group.begin.c++
+      push:
+        - include: common-context-prefix
+        - match: '\)'
+          scope: meta.group.c++ punctuation.section.group.end.c++
+          set:
+            - include: common-context-prefix
+            - include: parameters-and-qualifiers-partial
+            - match: '->'
+              scope: punctuation.separator.c++
+              set:
+                - include: common-context-prefix
+                - include: type-id
+                - match: '(?=\S)'
+                  pop: true
+            - match: '(?=\S)'
+              pop: true
+        - include: parameter-declaration-clause
+        - include: ptr-declarator
+
+  ptr-declarator:
+    - include: noptr-declarator-partial
+    - include: ptr-operator
+
+  noptr-declarator-partial:
+    - match: '\.\.\.'
+      scope: keyword.operator.variadic.c++
+    - match: '\[(?!\[)'
+      scope: punctuation.section.brackets.begin.c++
+      push:
+        - meta_scope: meta.declaration.array-extent.c++
+        - include: common-context-prefix
+        - match: '\]'
+          scope: punctuation.section.brackets.end.c++
+          set:
+            - include: common-context-prefix
+            - include: attribute-specifier-seq
+            - match: '(?=\S)'
+              pop: true
+        - include: constant-expression
+
+  ptr-operator-continue:
+    - match: '\*'
+      scope: keyword.modifier.address.c++
+      set:
+        - include: common-context-prefix
+        - include: cv-qualifier-seq
+        - match: '(?=\S)'
+          pop: 2
+    - match: '(?=\S)'
+      # Might be invalid character
+      pop: 2
+
+  ptr-operator:
+    - match: '\*'
+      scope: keyword.modifier.address.c++
+      push:
+        - include: common-context-prefix
+        - include: cv-qualifier-seq
+        - match: '(?=\S)'
+          pop: true
+    - match: '&(?:&)?'
+      scope: keyword.modifier.address.c++
+      push:
+        - include: common-context-prefix
+        - include: attribute-specifier-seq
+        - match: '(?=\S)'
+          pop: true
+    - match: '{{nested-name-specifier-lookahead}}'
+      push:
+        - include: nested-name-specifier
+        - match: '(?=\S)'
+          branch_point: trailing-unqualified-id-reached
+          branch:
+            - try-parse-until-trailing-unqualified-id
+            - ptr-operator-continue
+
+  # parameters-and-qualifiers:
+  #   ( parameter-declaration-clause ) cv-qualifier-seq? ref-qualifier? noexcept-specifier? attribute-specifier-seq?
+  parameters-and-qualifiers-partial:
+    - include: cv-qualifier-seq
+    - match: '&(?:&)?'
+      scope: keyword.modifier.address.c++
+    - include: noexcept-specifier
+    - include: attribute-specifier-seq
+
+  # noptr-abstract-pack-declarator:
+  #   noptr-abstract-pack-declarator parameters-and-qualifiers
+  noptr-abstract-pack-declarator:
+    - match: '\.\.\.'
+      scope: keyword.operator.variadic.c++
+      push:
+        - include: common-context-prefix
+        - match: '\('
+          scope: meta.group.c++ punctuation.section.group.begin.c++
+          set:
+            - include: common-context-prefix
+            - match: '\)'
+              scope: meta.group.c++ punctuation.section.group.end.c++
+              set:
+                - include: parameters-and-qualifiers-partial
+                - match: '(?=\S)'
+                  pop: true
+        - match: '(?=\S)'
+          pop: true
+
+  # abstract-declarator:
+  #   ptr-abstract-declarator
+  #   noptr-abstract-declarator? parameters-and-qualifiers trailing-return-type
+  #   abstract-pack-declarator 
+  abstract-pack-declarator:
+    - include: noptr-abstract-pack-declarator
+    - include: ptr-operator
+
+  # ptr-abstract-declarator:
+  #   noptr-abstract-declarator
+  #   ptr-operator ptr-abstract-declarator?
+  ptr-abstract-declarator:
+    - include: noptr-abstract-declarator-partial
+    - include: ptr-operator
+
+  # noptr-abstract-declarator:
+  #   noptr-abstract-declarator? parameters-and-qualifiers
+  #   noptr-abstract-declarator? [ constant-expression? ] attribute-specifier-seq?
+  #   (ptr-abstract-declarator)
+  noptr-abstract-declarator-partial:
+    - match: '\[(?!\[)'
+      scope: punctuation.section.brackets.begin.c++
+      push:
+        - meta_scope: meta.declaration.array-extent.c++
+        - include: common-context-prefix
+        - match: '\]'
+          scope: punctuation.section.brackets.end.c++
+          set:
+            - include: common-context-prefix
+            - include: attribute-specifier-seq
+            - match: '(?=\S)'
+              pop: true
+        - include: constant-expression
+
+
+  # abstract-declarator:
+  #   ptr-abstract-declarator
+  #   noptr-abstract-declarator? parameters-and-qualifiers trailing-return-type
+  #   abstract-pack-declarator 
+  abstract-declarator:
+    - include: ptr-abstract-declarator
+    # noptr-abstract-declarator partially included by ptr-abstract-declarator
+    - include: abstract-pack-declarator
+    # combine parameters-and-qualifiers
+    # for noptr-abstract-declarator as well as abstract-declarator
+    - match: '\('
+      scope: meta.group.c++ punctuation.section.group.begin.c++
+      push:
+        - include: common-context-prefix
+        - match: '\)'
+          scope: meta.group.c++ punctuation.section.group.end.c++
+          set:
+            - include: common-context-prefix
+            - include: parameters-and-qualifiers-partial
+            - match: '->'
+              scope: punctuation.separator.c++
+              set:
+                - include: common-context-prefix
+                - include: type-id
+                - match: '(?=\S)'
+                  pop: true
+            - match: '(?=\S)'
+              pop: true
+        - include: parameter-declaration-clause
+        - include: ptr-abstract-declarator
+
+  nested-name-specifier:
+    - match: '(?:(::)\s*)?(?:{{identifier}}\s*(::)\s*)*'
+      captures:
+        1: punctuation.accessor.double-colon.c++
+        2: punctuation.accessor.double-colon.c++
+
+  try-parse-until-trailing-unqualified-id-2:
+    - match: '\.\.\.(?=\[)'
+      scope: keyword.operator.variadic.c++
+      set:
+        - match: '\['
+          scope: punctuation.section.brackets.begin.c++
+          set:
+            - include: common-context-prefix
+            - match: '\]'
+              scope: punctuation.section.brackets.end.c++
+              set:
+                - match: '(?=::)'
+                  pop: true
+                - match: '(?=\S)'
+                  fail: trailing-unqualified-id-reached
+            - include: constant-expression
+
+  try-parse-until-trailing-unqualified-id:
+    # This context pops itself on success and fails with trailing-unqualified-id-reached
+    # To be used in conjunction with nested-name-specifier
+    - match: '\bdecltype\b'
+      scope: keyword.operator.word.c++
+      push:
+        - include: common-context-prefix
+        - match: '\('
+          scope: meta.group.c++ punctuation.section.group.begin.c++
+          set:
+            - include: common-context-prefix
+            - match: '\)'
+              scope: meta.group.c++ punctuation.section.group.end.c++
+              set:
+                - match: '(?=::)'
+                  pop: true
+                - match: '(?=\S)'
+                  fail: trailing-unqualified-id-reached
+            - include: expression
+        - match: '\S'
+          scope: invalid.illegal.unexpected-character.c++
+          pop: true # don't re-highlight the whole file
+    - match: '\btemplate\b'
+      scope: keyword.declaration.c++
+    - match: '{{identifier}}'
+      captures:
+        1: punctuation.definition.generic.begin meta.template.c++
+      push:
+        - include: common-context-prefix
+        - match: '<'
+          set:
+            - meta_scope: meta.template.argument-list.c++
+            - include: common-context-prefix
+            - match: '>'
+              scope: punctuation.definition.generic.end meta.template.c++
+              set:
+                - match: '(?=::)'
+                  pop: true
+                - include: try-parse-until-trailing-unqualified-id-2
+                - match: '(?=\S)'
+                  fail: trailing-unqualified-id-reached
+            - include: template-argument-list
+        - match: '(?=::)'
+          pop: true
+        - include: try-parse-until-trailing-unqualified-id-2
+        - match: '(?=\S)'
+          fail: trailing-unqualified-id-reached
+    - match: '(?=\S)'
+      # Some other character found, e.g. Foo::Bar::*
+      fail: trailing-unqualified-id-reached
+
+  literal-or-conversion-or-operator-function-id:
+    - match: '\boperator\b'
+      scope: keyword.declaration.operator.c++ storage.type.function.c++ 
+      push:
+        - match: '(?:,|--|++|>>=|<<=|>>|<<|\|\||\&\&|->*|->|<=>'
+          scope: keyword.declaration.operator.c++ storage.type.function.c++ 
+          pop: true
+        - match: '|>=|<=|>|<|!=|==|\|=|&=|\^=|%=|/=|\*=|-=|\+=|='
+          scope: keyword.declaration.operator.c++ storage.type.function.c++ 
+          pop: true
+        - match: '|\||&|\^|%|/|*|-|\+|!|~|\[\]|\(\)|\bco_await\b|\bdelete\b\[\]|\bnew\b\[\])'
+          scope: keyword.declaration.operator.c++ storage.type.function.c++ 
+          pop: true
+        # literal-operator-id
+        - match: '(?:\b{{encoding-prefix}})?(?:R)?\s*""'
+          scope: keyword.declaration.operator.c++ storage.type.function.c++
+          set:
+            - match: '{{identifier}}'
+              scope: storage.type.function.c++
+              pop: true
+        - match: '(?=\S)'
+          set:
+            - include: common-context-prefix
+            - include: type-specifier-seq
+            - include: ptr-operator
+            - match: '(?=\S)'
+              pop: true
+
+  # unqualified-id:
+  #   identifier
+  #   operator-function-id
+  #   conversion-function-id
+  #   literal-operator-id
+  #   ~ type-name
+  #   ~ computed-type-specifier
+  #   template-id
+
+
+  pack-index-specifier-access:
+    - match: '\.\.\.(?=\[)' # for pack argument index in C++26
+      scope: keyword.operator.variadic.c++
+      push:
+        - include: common-context-prefix
+        - match: '\['
+          scope: punctuation.section.brackets.begin.c++
+          set:
+            - include: common-context-prefix
+            - match: '\]'
+              scope: punctuation.section.brackets.end.c++
+              pop: true
+            - include: constant-expression
+
+  computed-type-specifier:
+    # Does not include pack-index-sepcifier here, 
+    # Must use in conjunction with pack-index-specifier-access
+    - match: '\bdecltype\b'
+      scope: keyword.operator.word.c++
+      push:
+        - include: common-context-prefix
+        - match: '\('
+          scope: meta.group.c++ punctuation.section.group.begin.c++
+          set:
+            - include: common-context-prefix
+            - match: '\)'
+              scope: meta.group.c++ punctuation.section.group.end.c++
+              pop: true
+            - include: expression
+        - match: '(?=\S)'
+          scope: invalid.illegal.unexpected-character.c++
+          pop: true
+
+  # type-name:
+    # TODO
+
+  unqualified-id:
+    - match: '~'
+      push:
+        - meta_scope: meta.function.destructor.c++
+        - include: pack-index-specifier-access
+        - include: computed-type-specifier
+        - include: type-name
+        - match: '(?=\S)'
+          pop: true
+    # template-id == simple-template-id
+    #   | operator-function-id<template-argument-list>
+    #   | conversion-function-id<template-argument-list>
+    - match: '(?=\boperator\b)'
+      push:
+        - match: '<'
+          scope: punctuation.definition.generic.begin meta.template.c++
+          set:
+            - include: common-context-prefix
+            - match: '>'
+              scope: punctuation.definition.generic.end meta.template.c++
+              pop: true
+            - include: template-argument-list
+        - include: literal-or-conversion-or-operator-function-id
+        - match: '(?=\S)'
+          pop: true
+    - include: simple-template-id
+    # type-name | class-name | typedef-name | enum-name | variable
+    - match: '{{identifier}}'
+
+  qualified-id-continue:
+    - include: common-context-prefix
+    - match: '\btemplate\b'
+      scope: keyword.declaration.c++
+    - include: unqualified-id
+    - match: '(?=\S)'
+      pop: 2
+
+  qualified-id:
+    - match: '{{nested-name-specifier-lookahead}}'
+      push:
+        # nested-name-specifier won't match decltype because there is not trailing '::'
+        - include: nested-name-specifier
+        - match: '(?=\S)'
+          branch_point: trailing-unqualified-id-reached
+          branch:
+            # pops once, which restarts nested-name-specifier
+            - try-parse-until-trailing-unqualified-id
+            # pops twice, to return to qualified-id context
+            - qualified-id-continue
+
+  # id-expression:
+  #   unqualified-id
+  #   qualified-id
+  #   pack-index-expression
+  # pack-index-expression:
+  #   id-expression...[constant-expression]
+  id-expression:
+    - include: pack-index-specifier-access
+    - include: qualified-id
+
+    # qualified-id
+    # match for pack-index-expression included in unqualified-id through 
+
+  template-argument:
+    - match: '(?=\{)'
+      push:
+        - match: '(?<=})'
+          pop: true
+        - include: common-context-prefix
+        - include: braced-init-list
+    - include: type-id
+    - include: id-expression
+    - include: constant-expression
+
+  template-argument-list:
+    - match: ','
+      scope: punctuation.separator.c++
+      # Maybe push a scope here to check for invalids?
+    - match: '\.\.\.'
+      scope: keyword.operator.variadic.c++
+      push:
+        - include: common-context-prefix
+        - match: '(?=(,|>))'
+          pop: true
+        - match: '(?=\S)'
+          scope: invalid.illegal.unexpected-character.c++
+          pop: true
+    - include: template-argument
+
+
+  simple-template-id:
+    - match: '{{identifier}}'
+      push:
+        - include: common-context-prefix
+        - match: '<'
+          scope: punctuation.definition.generic.begin meta.template.c++
+          set:
+            - include: common-context-prefix
+            - match: '>'
+              scope: punctuation.definition.generic.end meta.template.c++
+              pop: true
+            - include: template-argument-list
+        - match: '(?=\S)'
+          # not a simple-template-id
+          pop: true
+
+  # TODO: Add ARM Neon and SVE?
+
+  intel-intrinsics-type-specifier:
+    - match: '(?<!::)\b__m(?:128|256|512)(?:i|d|h)?\b'
+      scope: storage.type.c storage.type.c++
+    - match: '(?<!::)\b__m64?\b'
+      scope: storage.type.c storage.type.c++
+    - match: '(?<!::)\b__mmask(?:8|16|32)\b'
+      scope: storage.type.c storage.type.c++
+  
+  c-type-specifier:
+    - match: '(?<!::)\b_Float(?:16|32|64|128)\b'
+      scope: storage.type.c storage.type.c++
+    - match: '(?<!::)\b_Decimal(?:32|64|128)\b'
+      scope: storage.type.c storage.type.c++
+    - match: '(?<!::)\b_(?:Bool|Complex|Imaginary|Atomic(?=!\())\b'
+      scope: storage.type.c storage.type.c++
+
+  cstd-type-specifier:
+    - match: '(?<!::)\bu?int(?:_fast)?(?:8|16|32|64)_t\b'
+      scope: storage.type.c storage.type.c++
+    - match: '(?<!::)\bu?int(?:max|ptr)_t\b'
+      scope: storage.type.c storage.type.c++
+    - match: '(?<!::)\b(?:ptrdiff_t|size_t|sig_atomic_t|mbstate_t|max_align_t|nullptr_t)\b'
+      scope: storage.type.c storage.type.c++
+
+  other-type-specifier:
+    - match: '(?<!::)\b__int(?:8|16|32|64|128)\b'
+      scope: storage.type.c storage.type.c++
+    - match: '(?<!::)\b__int128_t\b'
+      scope: storage.type.c storage.type.c++
+
+  simple-type-specifier-continue:
+    - include: pack-index-specifier-access
+    - include: common-context-prefix
+    - match: '\btemplate\b'
+      scope: keyword.declaration.c++
+    - match: '\bauto\b' # placeholder-type-specifier
+      scope: storage.type.c++
+      pop: 2
+    - include: computed-type-specifier
+    - include: type-name # also applies to concepts (through simple-template-id)    
+    - match: '(?=\S)'
+      pop: 2
+
+  simple-type-specifier:
+    - match: '\b(?:char(?:(?:8|16|32)_t)?|wchar_t|bool|short|int|long|signed|unsigned|float|double|void)\b'
+      scope: storage.type.c++
+    - include: intel-intrinsics-type-specifier
+    - include: c-type-specifier
+    - include: cstd-type-specifier
+    - include: winapi-type-specifier
+    - include: other-type-specifier
+    # concepts are essentially template-ids
+    - match: '\bauto\b' # placeholder-type-specifier
+      scope: storage.type.c++
+    # computed-type-specifier included by nested-name-specifier
+    - match: '{{nested-name-specifier-lookahead}}'
+      push:
+        # nested-name-specifier won't match decltype because there is not trailing '::'
+        - include: nested-name-specifier
+        - match: '(?=\S)'
+          branch_point: trailing-unqualified-id-reached
+          branch:
+            # pops once, which restarts nested-name-specifier
+            - try-parse-until-trailing-unqualified-id
+            # pops twice, to return to qualified-id context
+            - simple-type-specifier-continue
+
+  type-name:
+    - include: simple-template-id
+    - match: '{{identifier}}'
+
+  nested-type-name-continue:
+    - include: common-context-prefix
+    - match: '\btemplate\b'
+      scope: keyword.declaration.c++
+    - include: type-name # also applies to concepts (through simple-template-id)    
+    - match: '(?=\S)'
+      pop: 2
+
+  elaborated-type-specifier:
+    - match: '\b(?:(class|union|struct)|(enum))\b'
+      captures:
+        1: keyword.declaration.class-key.c++
+        2: keyword.declaration.enum-key.c++
+      push:
+        - meta_scope: meta.type-specifier.c++
+        - include: common-context-prefix
+        - include: attribute-specifier-seq
+        - include: nested-name-specifier
+        - match: '(?=\S)'
+          branch_point: trailing-unqualified-id-reached
+          branch:
+            # pops once, which restarts nested-name-specifier
+            - try-parse-until-trailing-unqualified-id
+            # pops twice, to return to qualified-id context
+            - nested-type-name-continue
+
+  typename-specifier:
+    - match: '\btypename\b'
+      scope: keyword.declaration.typename.c++
+      push:
+        - meta_scope: meta.type-specifier.c++
+        - include: common-context-prefix
+        - include: nested-name-specifier
+        - match: '(?=\S)'
+          branch_point: trailing-unqualified-id-reached
+          branch:
+            # pops once, which restarts nested-name-specifier
+            - try-parse-until-trailing-unqualified-id
+            # pops twice, to return to qualified-id context
+            - nested-type-name-continue
+
+  cv-qualifier:
+    - match: '\b(?:const|volatile)\b'
+      scope: storage.modifier.c++
+
+  type-specifier:
+    - include: simple-type-specifier
+    - include: elaborated-type-specifier
+    - include: typename-specifier
+    - include: cv-qualifier
+
+  type-specifier-seq:
+    - include: type-specifier
+    - include: attribute-specifier-seq
+
+  type-id:
+    - include: type-specifier-seq
+    - include: abstract-declarator
+
+  balanced-token-seq:
+    - match: ','
+      scope: punctuation.separator.c++
+    - match: '\('
+      scope: meta.group.c++ punctuation.section.group.begin.c++
+      push:
+        - include: common-context-prefix
+        - match: '\)'
+          scope: meta.group.c++ punctuation.section.group.end.c++
+          pop: true
+        - include: balanced-token-seq
+    - match: '\['
+      scope: meta.group.c++ punctuation.section.group.begin.c++
+      push:
+        - include: common-context-prefix
+        - match: '\]'
+          scope: meta.group.c++ punctuation.section.group.end.c++
+          pop: true
+        - include: balanced-token-seq
+    - match: '{'
+      scope: meta.group.c++ punctuation.section.group.begin.c++
+      push:
+        - include: common-context-prefix
+        - match: '}'
+          scope: meta.group.c++ punctuation.section.group.end.c++
+          pop: true
+        - include: balanced-token-seq
+    - include: number-literals
+    - include: string-literals
+    # - match: '{{identifier}}'
+  
+  attribute-list:
+    - match: ','
+      scope: punctuation.separator.c++
+    - match: '\.\.\.'
+      scope: keyword.operator.variadic.c++
+    - match: '({{identifier}})(::)'
+      captures:
+        1: variable.other.attribute.c++
+        2: punctuation.accessor.double-colon.c++
+    - match: '({{identifier}})(\()'
+      captures:
+        1: variable.other.attribute.c++
+        2: meta.group.c++ punctuation.section.group.begin.c++
+      push:
+        - include: common-context-prefix
+        - match: '\)'
+          scope: meta.group.c++ punctuation.section.group.end.c++
+          pop: true
+        - include: balanced-token-seq
+    - match: '{{identifier}}'
+      scope: variable.other.attribute.c++
+
+  attribute-specifier:
+    # We assume no sane person or linter would put a whitespace between these brackets
+    - match: '\[\['
+      scope: punctuation.section.brackets.begin.c++
+      push:
+        - meta_content_scope: meta.attributes.c++
+        - include: common-context-prefix
+        - match: '\]\]'
+          scope: punctuation.section.brackets.end.c++
+          pop: true
+        - match: '\busing\b'
+          scope: keyword.control.c++
+          set:
+            - include: common-context-prefix
+            - match: '{{identifier}}'
+              set:
+                - include: common-context-prefix
+                - match: ':'
+                  scope: punctuation.separator.c++
+                  set:
+                    - include: common-context-prefix
+                    - match: '(?=\]\])'
+                      pop: true
+                    - match: '::'
+                      scope: invalid.illegal.unexpected-character.c++
+                    - include: attribute-list
+                - match: '(?=\S)'
+                  scope: invalid.illegal.unexpected-character.c++
+        - include: attribute-list
+  
+  attribute-specifier-seq:
+    - include: comments
+    - include: attribute-specifier
+
+  noptr-new-declarator:
+    - match: '\['
+      scope: punctuation.section.brackets.begin.c++
+      push:
+        - include: common-context-prefix
+        - match: '\]'
+          scope: punctuation.section.brackets.end.c++
+          pop: true
+        - include: expression
+        - include: constant-expression
+    - include: attribute-specifier-seq
+
+  cv-qualifier-seq:
+    - include: cv-qualifier
+
+  new-declarator:
+    - include: comments
+    - include: ptr-operator
+    - include: noptr-new-declarator
+
+  new-initializer:
+    - match: '\('
+      scope: meta.group.c++ punctuation.section.group.begin.c++
+      push:
+        - include: common-context-prefix
+        - match: '\)'
+          scope: meta.group.c++ punctuation.section.group.end.c++
+          pop: true
+        - include: expression-list-parenthesis
+    - match: '(?={)'
+      set:
+        - match: '(?<=})'
+          pop: true
+        - include: common-context-prefix
+        - include: braced-init-list
+
+  expression-list-parenthesis:
+    - match: '(?<!\()),'
+      scope: punctuation.separator.c++
+    - match: '(?<!(\(|,))\.\.\.'
+      scope: keyword.operator.variadic.c++
+      push:
+        - include: common-context-prefix
+        - match: '(?=(,|\)))'
+          pop: true
+        - match: '(?=\S)'
+          scope: invalid.illegal.unexpected-character.c++
+    - include: initializer-clause
+
+  new-type-id:
+    - include: new-declarator
+    - include: type-specifier-seq
+
+  new-expression:
+    - match: '(?:(::)\s*)?\b(new)\b'
+      captures:
+        1: punctuation.accessor.global-namespace.c++
+        2: keyword.control.c++
+      push:
+        - include: comments
+        - match: '\('
+          scope: meta.group.c++ punctuation.section.group.begin.c++
+          push:
+            - include: common-context-prefix
+            - match: '\)'
+              scope: meta.group.c++ punctuation.section.group.end.c++
+              pop: true
+            - include: type-id
+            - include: expression-list-parenthesis
+        - match: '(?=\{)'
+          set:
+            - match: '(?<=})'
+              pop: true
+            - include: common-context-prefix
+            - include: braced-init-list
+        - include: new-type-id
+        - match: '(?=\S)'
+          pop: true
+
+  delete-expression:
+    - match: '(?:(::)\s*)?\b(delete)\b\s*([])?'
+      captures:
+        1: punctuation.accessor.global-namespace.c++
+        2: keyword.control.c++
+        3: keyword.control.c++
+      push:
+        - include: common-context-prefix
+        - include: cast-expression
+        - match: '(?=\S)'
+          pop: true
+
+  sizeof-expression:
+    - match: '\bsizeof\b'
+      scope: keyword.operator.word.c++
+      push:
+        - match: '\.\.\.'
+          scope: keyword.operator.variadic.c++
+          set:
+            - include: common-context-prefix
+            - match: '\('
+              scope: meta.group.c++ punctuation.section.group.begin.c++
+              set:
+                - include: common-context-prefix
+                - match: '{{identifier}}'
+                  scope: variable.parameter.template.pack.c++
+                  set:
+                    - include: common-context-prefix
+                    - match: '\)'
+                      scope: meta.group.c++ punctuation.section.group.end.c++
+                      pop: true
+            - match: '(?=\S)'
+              scope: invalid.illegal.unexpected-character.c++
+              pop: true
+        - match: '\('
+          scope: meta.group.c++ punctuation.section.group.begin.c++
+          set:
+            - include: common-context-prefix
+            - match: '\)'
+              scope: meta.group.c++ punctuation.section.group.end.c++
+              pop: true
+            - include: type-id
+            - include: unary-expression
+
+  alignof-expression:
+    - match: '\balignof\b'
+      scope: keyword.operator.word.c++
+      push: 
+        - match: '\('
+          scope: meta.group.c++ punctuation.section.group.begin.c++
+          set:
+            - include: common-context-prefix
+            - match: '\)'
+              scope: meta.group.c++ punctuation.section.group.end.c++
+              pop: true
+            - include: type-id
+        - match: '(?=\S)'
+          scope: invalid.illegal.unexpected-character.c++
+          pop: true
+
+  noexcept-expression:
+    - match: '\bnoexcept\b'
+      scope: keyword.operator.word.c++
+      push:
+        - include: common-context-prefix
+        - match: '\('
+          scope: meta.group.c++ punctuation.section.group.begin.c++
+          set:
+            - include: common-context-prefix
+            - match: '\)'
+              scope: meta.group.c++ punctuation.section.group.end.c++
+              pop: true
+            - include: expression
+        - match: '(?=\S)'
+          scope: invalid.illegal.unexpected-character.c++
+          pop: true
+
+  await-expression:
+    - match: '\bco_await\b'
+      scope: keyword.control.c++
+      push:
+        - include: common-context-prefix
+        - include: cast-expression
+        - match: '(?=\S)'
+          pop: true
+
+  expression-list-brackets:
+    - match: '(?<!\[),'
+      scope: punctuation.separator.c++
+    - match: '(?<!(\[|,))\.\.\.'
+      scope: keyword.operator.variadic.c++
+      push:
+        - include: common-context-prefix
+        - match: '(?=(,|\]))'
+          pop: true
+        - match: '(?=\S)'
+          scope: invalid.illegal.unexpected-character.c++
+    - include: initializer-clause
+
+  lambda-expression-continue:
+    - match: '{'
+      scope: punctuation.definition.block.begin.c++
+      set:
+        - include: common-context-prefix
+        - meta_scope: meta.function.c++
+        - match: '}'
+          scope: punctuation.definition.block.end.c++
+          pop: true
+        - include: statement-seq
+    - include: lambda-declarator
+    - include: attribute-specifier-seq
+
+  lambda-expression:
+    - match: '\['
+      scope: punctuation.section.brackets.begin.c++
+      push:
+        - meta_scope: meta.lambda-expression.c++
+        - include: common-context-prefix
+        - match: '\]'
+          scope: punctuation.section.brackets.end.c++
+          set:
+            - match: '<'
+              scope: punctuation.definition.generic.begin meta.template.c++
+              set:
+                - include: common-context-prefix
+                - match: '>'
+                  scope: punctuation.definition.generic.end meta.template.c++
+                  set:
+                    - include: common-context-prefix
+                    - include: requires-clause
+                    - include: lambda-expression-continue
+                - include: template-argument-list
+            - include: lambda-expression-continue
+        - include: lambda-capture
+
+  concept-name:
+    - include: simple-template-id
+
+  type-constraint-continue:
+    - match: '(?<=>)'
+      pop: 2
+    - include: concept-name
+    - match: '(?=\S)'
+      scope: invalid.illegal.unexpected-character.c++
+      pop: 2
+
+  type-constraint:
+    - match: '{{nested-name-specifier-lookahead}}'
+      push:
+        - include: nested-name-specifier
+        - match: '(?=\S)'
+          branch_point: trailing-unqualified-id-reached
+          branch:
+            # pops once, which restarts nested-name-specifier
+            - try-parse-until-trailing-unqualified-id
+            # pops twice, to return to qualified-id context
+            - type-constraint-continue
+
+  nested-requirement:
+    - match: '\brequires\b'
+      scope: keyword.control.c++
+      push:
+        - meta_scope: meta.requirement.nested.c++
+        - include: common-context-prefix
+        - match: ';'
+          scope: punctuation.terminator.c++
+          pop: true
+        - include: constraint-expression
+
+  compound-requirement:
+    - match: '{'
+      scope: punctuation.section.block.begin.c++
+      push:
+        - meta_scope: meta.requirement.compound.c++
+        - include: common-context-prefix
+        - match: '}'
+          scope: punctuation.section.block.end.c++
+          set:
+            - include: common-context-prefix
+            - match: '\bnoexcept\b'
+              scope: storage.modifier.c++
+            - match: '->'
+              scope: punctuation.separator.c++
+              set: 
+                - include: common-context-prefix
+                - match: ';'
+                  scope: punctuation.terminator.c++
+                  pop: true
+                - include: type-constraint
+            - match: ';'
+              scope: punctuation.terminator.c++
+              pop: true
+        - include: expressions
+
+
+  type-requirement-continue:
+    - include: common-context-prefix
+    - match: ';'
+      scope: punctuation.terminator.c++
+      pop: 2
+    - include: type-name # also applies to concepts (through simple-template-id)    
+
+  type-requirement:
+    - meta_content_scope: meta.requirement.type.c++
+    - match: '\btypename\b'
+      scope: keyword.declaration.typename.c++
+      push:
+        - include: common-context-prefix
+        - match: '(?=\S)'
+          set:
+            - include: nested-name-specifier
+            - match: '(?=\S)'
+              branch_point: trailing-unqualified-id-reached
+              branch:
+                # pops once, which restarts nested-name-specifier
+                - try-parse-until-trailing-unqualified-id
+                # pops twice, to return to qualified-id context
+                - type-requirement-continue
+
+  requirement-seq:
+    - match: '{'
+      scope: punctuation.section.block.begin.c++
+      push:
+        - include: common-context-prefix
+        - match: '}'
+          scope: punctuation.section.block.end.c++
+          pop: true
+        - include: nested-requirement
+        - include: compound-requirement
+        - include: type-requirement
+        - match: '(?=\S)'
+          set:
+            - include: common-context-prefix
+            - match: ';'
+              scope: punctuation.terminator.c++
+              pop: true
+            - include: expressions # Simple requirements
+
+  storage-class-specifier:
+    - match: '\b(?:static|extern|mutable|thread_local)\b'
+      scope: storage.modifier.c++
+
+  class-specifier:
+    - match: '\b(class)|(union)|(struct)\b'
+      captures:
+        1: keyword.declaration.class.c++
+        2: keyword.declaration.union.c++
+        3: keyword.declaration.struct.c++
+  # TODO
+
+  opaque-enum-declaration-continue:
+    # This context pops itself on completion
+    - meta_content_scope: meta.enum.c++
+    - match: '{{identifier}}'
+      scope: entity.name.enum.c++
+      set: 
+        - include: common-context-prefix
+        - match: ':'
+          scope: punctuation.separator.c++
+          set: 
+            - include: type-specifier-seq
+            - match: ';'
+              scope: punctuation.terminator.c++
+              pop: 2
+        - match: ';'
+          scope: punctuation.terminator.c++
+          pop: 2
+    - match: '(?=)' # something strange is going on :S
+      pop: 2
+
+  opaque-enum-declaration:
+    - match: '\benum\b(?:\s+(?:class|struct)\b)?'
+      scope: keyword.declaration.enum.c++
+      push:
+        - include: attribute-specifier-seq
+        - match: '{{nested-name-specifier-lookahead}}'
+          set:
+            - include: nested-name-specifier
+            - match: '(?=\S)'
+              branch_point: trailing-unqualified-id-reached
+              branch:
+                - try-parse-until-trailing-unqualified-id
+                - opaque-enum-declaration-continue
+
+  enumerator-list:
+    - include: common-context-prefix
+    - match: ','
+      scope: punctuation.separator.continuation.c++
+    - match: '{{identifier}}'
+      scope: entity.name.constant.c++
+      push:
+        - include: common-context-prefix
+        - include: attribute-specifier-seq
+        - match: '='
+          scope: keyword.operator.assignment.c++
+          set:
+            - include: constant-expression
+            - match: '(?=\S)'
+              pop: true
+        - match: '(?=\S)'
+          pop: true
+
+  enum-specifier-continue:
+    # This context pops itself on completion
+    - meta_content_scope: meta.enum.c++
+    - match: '{{identifier}}'
+      scope: entity.name.enum.c++
+      set: 
+        - include: common-context-prefix
+        - match: ':'
+          scope: punctuation.separator.c++
+          set: 
+            - include: type-specifier-seq
+            - match: '{'
+              scope: punctuation.definition.block.begin.c++
+              set:
+                - match: '}'
+                  scope: punctuation.definition.block.end.c++
+                  pop: 2
+                - include: enumerator-list
+        - match: '{'
+          scope: punctuation.definition.block.begin.c++
+          set:
+            - match: '}'
+              scope: punctuation.definition.block.end.c++
+              pop: 2
+            - include: enumerator-list
+    - match: '(?=)' # something strange is going on :S
+      pop: 2
+
+  enum-specifier:
+    - match: '\benum\b(?:\s+class\b|struct\b)?'
+      scope: keyword.declaration.enum.c++
+      push:
+        - include: attribute-specifier-seq
+        - match: '{{nested-name-specifier-lookahead}}'
+          set:
+            - include: nested-name-specifier
+            - match: '(?=\S)'
+              branch_point: trailing-unqualified-id-reached
+              branch:
+                - try-parse-until-trailing-unqualified-id
+                - enum-specifier-continue
+
+  defining-type-specifier-seq:
+    - include: defining-type-specifier
+    - include: attribute-specifier-seq
+
+  defining-type-specifier:
+    - include: type-specifier
+    - include: class-specifier
+    - include: enum-specifier
+
+  explicit-specifier:
+    - match: '\bexplicit\b'
+      scope: storage.modifier.c++
+      push:
+        - match: '\('
+          scope: meta.group.c++ punctuation.section.group.begin.c++
+          set:
+            - include: common-context-prefix
+            - match: '\)'
+              scope: meta.group.c++ punctuation.section.group.end.c++
+              pop: true
+            - include: constant-expression
+        - include: common-context-prefix
+        - match: '(?=\S)'
+          pop: true
+
+  function-specifier:
+    - match: '\bvirtual\b'
+      scope: storage.modifier.c++
+    - include: explicit-specifier
+
+  decl-specifier:
+    - include: storage-class-specifier
+    - include: defining-type-specifier
+    - include: function-specifier
+    - match: '\b(?:friend|inline|constinit|consteval|constexpr)\b'
+      scope: storage.modifier.c++
+    - match: '\btypedef\b'
+      scope: keyword.declaration.typedef.c++
+
+  decl-specifier-seq:
+    - include: decl-specifier
+    - include: attribute-specifier-seq
+
+  parameter-declaration:
+    - include: attribute-specifier-seq
+    - match: '\bthis\b'
+      scope: variable.language.this.c++
+    - match: '(?=\S)'
+      push:
+        - include: common-context-prefix
+        - match: '='
+          scope: invalid.illegal.unexpected-character.c++
+        - include: decl-specifier-seq
+        - match: '(?=\S)'
+          set:
+            - include: common-context-prefix
+            - match: '='
+              scope: keyword.operator.assignment.c++
+              set:
+                - include: common-context-prefix
+                - include: initializer-clause
+                - match: '(?=\S)'
+                  pop: true
+            - include: declarator
+            - include: abstract-declarator
+            - match: '(?=\S)'
+              pop: true
+
+  parameter-declaration-list:
+    - match: ','
+      scope: punctuation.separator.c++
+    - match: '(?=\S)'
+      push:
+        - include: common-context-prefix
+        - include: parameter-declaration
+        - match: '(?=\S)'
+          pop: true
+
+  parameter-declaration-clause:
+    - match: '\.\.\.'
+      scope: keyword.operator.variadic.c++
+    - match: ','
+      scope: punctuation.separator.c++
+    - match: '(?=\S)'
+      push: 
+        - include: common-context-prefix
+        - include: parameter-declaration-list
+        - match: '(?=\S)'
+          pop: true
+
+  requirement-parameter-list:
+    - match: '\('
+      scope: meta.group.c++ punctuation.section.group.begin.c++
+      push:
+        - meta_scope: meta.requirement.parameter-list.c++
+        - include: common-context-prefix
+        - match: '\)'
+          scope: meta.group.c++ punctuation.section.group.end.c++
+          pop: true
+        - include: parameter-declaration-clause
+
+  requires-expression:
+    - match: '\brequires\b'
+      scope: keyword.declaration.requires-expression.c++
+      push:
+        - meta_scope: meta.requires-expression.c++
+        - include: common-context-prefix
+        - include: requirement-parameter-list
+        - include: requirement-seq
+        - match: '(?=\S)'
+          pop: true
+
+  constraint-logical-and-expression:
+    # primary-expression
+    # Not all entries of primary-expression makes sense
+    # e.g. lambda-expression and `this` cannot be used here
+    - include: requires-expression
+    - include: literal
+    - include: id-expression
+    - match: '\('
+      scope: meta.group.c++ punctuation.section.group.begin.c++
+      push:
+        - include: common-context-prefix
+        - match: '\)'
+          scope: meta.group.c++ punctuation.section.group.end.c++
+          pop: true
+        - include: expression # part of primary-expression
+        - match: '\.\.\.' # part of fold-expression
+          scope: keyword.operator.variadic.c++
+    - match: '&&'
+      scope: keyword.operator.logical.c++
+
+  constraint-logical-or-expression:
+    - include: constraint-logical-and-expression
+    - match: '||'
+      scope: keyword.operator.logical.c++
+
+  requires-clause:
+    - include: comments
+    - match: '\brequires\b'
+      scope: keyword.control.c++
+      push: 
+        - include: common-context-prefix
+        - include: constraint-logical-or-expression
+        - match: '(?=\S)'
+          pop: true
+
+  exception-declaration:
+    - match: '\.\.\.'
+      scope: keyword.operator.variadic.c++
+    - include: attribute-specifier-seq
+    - include: type-specifier-seq
+    - include: declarator
+    - include: abstract-declarator
+
+  handler-seq:
+    # This context pops itself on success/failure
+    - match: '\bcatch\b'
+      scope: keyword.control.c++
+      push:
+        - meta_scope: meta.catch-block.c++
+        - include: common-context-prefix
+        - match: '\('
+          scope: punctuation.section.group.begin.c++
+          set:
+            - include: common-context-prefix
+            - match: '\)'
+              scope: punctuation.section.group.begin.c++
+              set:
+                - match: '(?<=})'
+                  pop: true
+                - include: common-context-prefix
+                - include: compound-statement
+            - include: exception-declaration
+    - match: '(?=\S)'
+      pop: true
+
+  try-block:
+    - match: '\btry\b'
+      scope: keyword.control.c++
+      push:
+        - meta_scope: meta.try-block.c++
+        - match: '(?<=})'
+          set:
+            - include: common-context-prefix
+            - match: '(?=\bcatch\b)'
+              set: handler-seq
+            - match: '(?=\S)'
+              scope: invalid.illegal.unexpected-character.c++
+              pop: true
+        - include: common-context-prefix
+        - include: compound-statement
+        - match: '(?=\S)'
+          scope: invalid.illegal.unexpected-character.c++
+          pop: true
+
+  label:
+    - match: '^\s*{{identifier}})(:)(?!:)'
+      captures:
+        1: entity.name.label.c++
+        2: punctuation.separator.c++
+
+  expression-statement:
+    - match: ';'
+      scope: punctuation.terminator.c++
+    - include: expression
+
+  condition:
+    - include: expression
+    - include: attribute-specifier-seq
+    - match: '(?=\S)'
+      push:
+        - include: common-context-prefix
+        - include: decl-specifier-seq
+        # Difficult to tell the difference between structured binding and declarator
+        - include: structured-binding-declaration
+        - include: declarator
+        - include: brace-or-equal-initializer
+        - include: initializer
+        - match: '(?=\S)'
+          pop: true
+
+  selection-statement-end:
+    # This context pops itself on completion
+    - include: statement
+    - match: '(?=\S)'
+      pop: true
+
+  selection-statement-3:
+    # This context pops itself on completion
+    - match: '\)'
+      scope: meta.group.c++ punctuation.section.group.end.c++
+      set:
+        - include: common-context-prefix
+        - match: '\belse\b'
+          scope: keyword.control.flow.c++
+          set:
+            - include: common-context-prefix
+            - include: selection-statement-end
+        - include: selection-statement-end
+    - include: condition
+
+  selection-statement-2:
+    # This context pops itself on completion
+    - match: '\('
+      scope: meta.group.c++ punctuation.section.group.begin.c++
+      set:
+        - include: common-context-prefix
+        - include: selection-statement-3
+        - match: ';' # intercept init-statement
+          set:
+            - include: common-context-prefix
+            - include: selection-statement-3
+        - include: init-statement
+
+  consteval-selection-statement:
+    # This context pops itself on completion
+    - match: '\bconsteval\b'
+      scope: keyword.control.flow.c++
+      set:
+        - match: '(?<=})' # end-of-compound-statment
+          set:
+            - include: common-context-prefix
+            - match: '\belse\b'
+              scope: keyword.control.flow.c++
+              set:
+                - include: common-context-prefix
+                - include: selection-statement-end
+            - match: '(?=\S)'
+              pop: true
+        - include: common-context-prefix
+        - include: compound-statement
+        - match: '(?=\S)'
+          scope: invalid.illegal.unexpected-character.c++
+    - match: '(?=\S)'
+      scope: invalid.illegal.unexpected-character.c++
+
+
+  selection-statement:
+    - match: '\bif\b'
+      scope: keyword.control.flow.c++
+      push:
+        - include: common-context-prefix
+        - match: '(?:!|\bnot\b)'
+          scope: keyword.control.flow.c++
+          set: 
+            - include: common-context-prefix
+            - include: consteval-selection-statement
+        - include: consteval-selection-statement
+        - match: '\bconstexpr\b'
+          scope: keyword.control.flow.c++
+          set:
+            - include: common-context-prefix
+            - include: selection-statement-2
+        - include: selection-statement-2
+
+  compound-statement:
+    - match: '{'
+      scope: punctuation.definition.block.begin.c++
+      push:
+        - meta_scope: meta.statement.compound.c++
+        - include: common-context-prefix
+        - match: '}'
+          scope: punctuation.definition.block.end.c++
+          pop: true # repeat handler-seq
+        - include: statement-seq
+
+  init-statement:
+    - include: expression-statement
+    - include: simple-declaration
+    - include: alias-declaration
+
+  statement:
+    - include: comments
+    - include: attribute-specifier-seq
+    - include: label
+    - include: expression-statement
+    - include: compound-statement
+    - include: selection-statement
+    - include: iteration-statement
+    - include: jump-statement
+    - include: assertion-statement
+    - include: declaration-statement
+    - include: try-block
+
+  statement-seq:
+    - include: statement
+
+  noexcept-specifier:
+    - match: '\bnoexcept\b'
+      scope: storage.modifier.c++
+      push:
+        - meta_scope: meta.specifier.noexcept.c++
+        - include: common-context-prefix
+        - match: '\('
+          scope: meta.group.c++ punctuation.section.group.begin.c++
+          set:
+            - include: common-context-prefix
+            - match: '\)'
+              scope: meta.group.c++ punctuation.section.group.end.c++
+              pop: true
+            - include: constant-expression
+        - match: '(?=\S)'
+          pop: true
+
+  lambda-declarator:
+    - match: '\b(mutable|static|consteval|constexpr)\b'
+      scope: storage.modifier.c++
+    - include: noexcept-specifier
+    - include: attribute-specifier-seq
+    - match: '->'
+      scope: punctuation.separator.c++
+      push:
+        - include: common-context-prefix
+        - include: type-id
+        - match: '(?=\S)'
+          pop: true
+    - include: function-contract-specifier
+
+  primary-expression-partial:
+    - match: '\bthis\b'
+      scope: variable.language.this.c++
+    - include: requires-expression
+    - include: literal
+    - include: id-expression
+    # lambda-expression, (expression), fold-expression matched separaterly for postfix-expression due to conflicts
+
+  lambda-expression-template-declaration:
+    # This context pops itself on completion
+    - match: '<'
+      scope: punctuation.definition.generic.begin
+      set:
+        - include: common-context-prefix
+        - match: '>'
+          scope: punctuation.definition.generic.end
+          set:
+            - include: common-context-prefix
+            - include: requires-clause
+            - include: lambda-expression-continue
+            - match: '(?=\S)'
+              pop: true
+        - include: template-argument-list
+
+  lambda-expression-continue:
+    # This context pops itself on completion
+    - match: '(?={)'
+      set: 
+        - match: '(?<=})' # end-of-compound-statment
+          set: postfix-expression-continue
+          pop: true
+        - include: compound-statement
+    - include: attribute-specifier-seq
+    - include: lambda-declarator
+
+  lambda-expression:
+    - match: '\['
+      scope: punctuation.section.brackets.begin.c++
+      push:
+        - meta_scope: meta.lambda-expression.c++
+        - include: common-context-prefix
+        - match: '\]'
+          scope: punctuation.section.brackets.end.c++
+          set:
+            - include: lambda-expression-template-declaration
+            - include: lambda-expression-continue
+        - include: lambda-capture
+
+  postfix-expression:
+    - match: '\btypeid\b'
+      scope: keyword.operator.word.c++
+      push:
+        - include: common-context-prefix
+        - match: '\('
+          scope: meta.group.c++ punctuation.section.group.begin.c++
+          set:
+            - include: common-context-prefix
+            - match: '\)'
+              scope: meta.group.c++ punctuation.section.group.end.c++
+              set: postfix-expression-continue
+              pop: true
+            - include: expression
+            - include: type-id
+        - match: '(?=\S)'
+          scope: invalid.illegal.unexpected-character.c++
+          pop: true
+    - match: '\('
+      scope: meta.group.c++ punctuation.section.group.begin.c++
+      push:
+        - include: common-context-prefix
+        - match: '\)'
+          scope: meta.group.c++ punctuation.section.group.end.c++
+          set: postfix-expression-continue
+          pop: true
+        - include: expression # part of primary-expression
+        - match: '\.\.\.' # part of fold-expression
+          scope: keyword.operator.variadic.c++
+    - match: '\b(?:dynamic_cast|static_cast|const_cast|reinterpret_cast)\b'
+      scope: keyword.operator.word.cast.c++
+      push:
+        - meta_scope: meta.cast.c++
+        - include: common-context-prefix
+        - match: '<'
+          scope: punctuation.definition.generic.begin.c++
+          set:
+            - include: common-context-prefix
+            - match: '>'
+              scope: punctuation.definition.generic.end.c++
+              set:
+                - include: common-context-prefix
+                - match: '\('
+                  scope: meta.group.c++ punctuation.section.group.begin.c++
+                  set:
+                    - include: common-context-prefix
+                    - match: '\)'
+                      scope: meta.group.c++ punctuation.section.group.end.c++
+                      set: postfix-expression-continue
+                      pop: true
+                    - include: expression
+            - include: type-id
+        - match: '(?=\S)'
+          scope: invalid.illegal.unexpected-character.c++
+          pop: true
+    # lambda-expression
+    - match: '(?=\[)'
+      push:
+        - meta_content_scope: meta.lambda-expression.c++
+        - match: '(?<=})'
+          pop: true
+        - include: lambda-expression
+        - match: '(?=/S)'
+          scope: invalid.illegal.unexpected-character.c++
+          pop: true
+    - match: '(?=\S)'
+      push:
+        - include: common-context-prefix
+        - include: primary-expression-partial
+        - include: simple-type-specifier
+        - include: typename-specifier
+        - match: '(?=\S)'
+          set: postfix-expression-continue
+
+  postfix-expression-continue:
+    # This context pops itself on completion
+    - include: braced-init-list
+    - match: '(\.|->)'
+      scope: punctuation.accessor.member.c++
+      push:
+        - include: common-context-prefix
+        - match: '\btemplate\b'
+          scope: keyword.declaration.c++
+        - include: id-expression
+        - match: '(?=\S)'
+          pop: true
+    - match: '\('
+      scope: punctuation.section.group.begin.c++
+      push:
+        - meta_scope: meta.group.c++ meta.function-call.c++
+        - include: common-context-prefix
+        - match: '\)'
+          scope: punctuation.section.group.end.c++
+          pop: true
+        - include: expression-list-parenthesis
+    - match: '\['
+      scope: punctuation.section.brackets.begin.c++
+      push:
+        - meta_scope: punctuation.accessor.index.c++
+        - include: common-context-prefix
+        - match: '\]'
+          scope: punctuation.section.brackets.end.c++
+          pop: true
+        - include: expression-list-brackets
+    - match: '(?:\+\+|--)'
+      scope: keyword.operator.arithmetic.c++
+    - match: '\)|\]|}'
+      scope: invalid.illegal.stray-bracket-end.c++
+      pop: true
+    - match: '(?=\S)'
+      pop: true
+
+  unary-expression:
+    - match: '(?:!|~)' #'(\*|&|+|-|!|~)'
+      scope: keyword.operator.arithmetic.c++
+    - match: '(?:\+\+|--)'
+      scope: keyword.operator.arithmetic.c++
+    - include: await-expression
+    - include: sizeof-expression
+    - include: alignof-expression
+    - include: noexcept-expression
+    - include: new-expression
+    - include: delete-expression
+    - include: postfix-expression
+
+  cast-expression:
+    - match: '\('
+      scope: meta.group.c++ punctuation.section.group.begin.c++
+      push:
+        - include: common-context-prefix
+        - match: '\)'
+          scope: meta.group.c++ punctuation.section.group.end.c++
+          pop: true
+        - include: type-id
+        - include: expression
+    - include: unary-expression
+
+  pm-expression:
+    - include: cast-expression
+    - match: '(\.\*|->\*)'
+      scope: punctuation.accessor.c++
+
+  multiplicative-expression:
+    - include: pm-expression
+    - match: '(/|%)'
+      scope: keyword.operator.arithmetic.c++
+    - match: '\*'
+      scope: keyword.operator.c++
+
+  additive-expression:
+    - include: multiplicative-expression
+    - match: '(+|-)'
+      scope: keyword.operator.arithmetic.c++
+
+  shift-expression:
+    - include: additive-expression
+    - match: '(<<|>>)'
+      scope: keyword.operator.bitwise.c++
+
+  compare-expression:
+    - include: shift-expression
+    - match: '<=>'
+      scope: keyword.operator.comparison.c++
+
+  relational-expression:
+    - include: compare-expression
+    - match: '(<(?!(=|<))|>(?!>)|<=(?!>)|>=)'
+      scope: keyword.operator.comparison.c++
+
+  equality-expression:
+    - include: relational-expression
+    - match: '(==|!=)'
+      scope: keyword.operator.comparison.c++
+
+  and-expression:
+    - include: equality-expression
+    - match: '&(?!&)'
+      scope: keyword.operator.c++
+
+  exclusive-or-expression:
+    - include: and-expression
+    - match: '^(?!=)'
+      scope: keyword.operator.bitwise.c++
+
+  inclusive-or-expression:
+    - include: exclusive-or-expression
+    - match: '\|(?!\|)'
+      scope: keyword.operator.bitwise.c++
+
+  logical-and-expression:
+    - include: inclusive-or-expression
+    - match: '&&'
+      scope: keyword.operator.logical.c++ keyword.operator.logical.c
+
+  logical-or-expression:
+    - include: logical-and-expression
+    - match: '\|\|'
+      scope: keyword.operator.logical.c++ keyword.operator.logical.c
+
+  brace-or-equal-initializer:
+    - match: '='
+      scope: keyword.operator.assignment.c++
+      push:
+        - include: common-context-prefix
+        - include: initializer-clause
+        - match: '(?=\S)'
+          pop: true
+    - match: '(?=\{)'
+      push:
+        - match: '(?<=})'
+          pop: true
+        - include: common-context-prefix
+        - include: braced-init-list
+
+  designated-initializer-clause:
+    - match: '(\.)\s*({{identifier}})'
+      captures:
+        1: punctuation.accessor.designated-initializer.c++
+        2: variable.other.member
+      push:
+        - include: common-context-prefix
+        - include: brace-or-equal-initializer
+        - match: '(?=\S)'
+          pop: true
+
+  designated-initializer-list:
+    - match: ','
+      scope: punctuation.separator.c++
+    - include: designated-initializer-clause
+
+  initializer-clause:
+    - match: '(?=\{)'
+      push:
+        - match: '(?<=})'
+          pop: true
+        - include: common-context-prefix
+        - include: braced-init-list
+    - include: assignment-expression
+    
+  initializer-list:
+    - match: '(?=})'
+      scope: punctuation.definition.block.end.c++
+      pop: true
+    - match: '(?<!{),'
+      scope: punctuation.separator.c++
+    - match: '(?<!({|,))\.\.\.'
+      scope: keyword.operator.variadic.c++
+      push:
+        - match: '(?=(,|}))'
+          pop: true
+        - match: '(?=\S)'
+          scope: invalid.illegal.unexpected-character.c++
+    - include: initializer-clause
+
+  braced-init-list:
+    - match: '{'
+      scope: punctuation.definition.block.begin.c++
+      push:
+        - include: common-context-prefix
+        - match: '}'
+          scope: punctuation.definition.block.end.c++
+          pop: true
+        - match: '(?=\.\s*{{identifier}})'
+          set:
+            - include: common-context-prefix
+            - include: designated-initializer-list
+            - match: '(?=\S)'
+              pop: true
+        - match: '(?=\S)'
+          set:
+            - include: common-context-prefix
+            - include: initializer-list
+            - match: '(?=\S)'
+              pop: true
+
+  assignment-expression:
+    - match: '\bthrow\b'
+      scope: keyword.control.jump.c++
+      push:
+        - include: common-context-prefix
+        - include: assignment-expression
+        - match: '(?=\S)'
+          pop: true
+    - match: '\bco_yield\b'
+      captures: keyword.control.coroutine.c++
+      push:
+        - include: common-context-prefix
+        - match: '(?={)'
+          set:
+            - match: '(?<=})'
+              pop: true
+            - include: common-context-prefix
+            - include: braced-init-list
+        - match: '(?=\S)'
+          set:
+            - include: common-context-prefix
+            - include: assignment-expression
+            - match: '(?=\S)'
+              pop: true
+    - match: '(?=\S)'
+      push:
+        - include: common-context-prefix
+        - include: logical-or-expression
+        - match: '(?=\S)'
+          set:
+            - include: common-context-prefix
+            - match: '(*=|/=|%=|+=|-=|>>=|<<=|&=|^=|\|=|(?<!<|>|!)=(?!=|>))'
+              scope: keyword.operator.assignment.c++
+              set:
+                - include: common-context-prefix
+                - include: initializer-clause
+                - match: '(?=\S)'
+                  pop: true
+            # conditional-expression:
+            #   logical-or-expression ? expression : assignment-expression
+            - match: '\?' 
+              scope: keyword.operator.ternary.c++
+              set:
+                - include: common-context-prefix
+                - match: ':'
+                  scope: keyword.operator.ternary.c++
+                  pop: true
+                - include: expression
+            - match: '(?=\S)'
+              pop: true
+
+  expression:
+    - include: assignment-expression
+    - match: ','
+      scope: keyword.operator.arithmetic.c++
+
+  conditional-expression:
+    - include: logical-or-expression
+    - match: '\?'
+      scope: keyword.operator.ternary.c++
+      push:
+        - include: common-context-prefix
+        - match: ':'
+          scope: keyword.operator.ternary.c++
+          set:
+            - include: assignment-expression
+            - match: '(?=\S)'
+              pop: true
+        - include: expression
+        
+
+  constant-expression:
+    - include: conditional-expression
+
+  comments:
+    - include: line-comment
+    - include: block-comment
+
+  line-comment:
+    - match: '//.*'
+      scope: comment.line.double-slash.c++
+
+  block-comment:
+    - match: '/\*'
+      scope: comment.block.c++ 
+      push:
+        - match: '\*/'
+          scope: comment.block.c++
+          pop: true
+        - match: '.'
+          scope: comment.block.content.c++
+
+  # literal:
+    # TODO
+
+
+  raw-string-literals:
+    - match: '((?:L|u8|u|U)?R)("([^\(\)\\ ]{0,16})\()'
+      captures:
+        1: storage.type.string.c++
+        2: punctuation.definition.string.begin.c++
+      push:
+        - meta_scope: string.quoted.double.c++
+        - match: '\)\3"'
+          scope: punctuation.definition.string.end.c++
+          pop: true
+
+  string-literals:
+    - match: '(L|u8|u|U)?(")'
+      captures:
+        1: storage.type.string.c++
+        2: punctuation.definition.string.begin.c++
+      push:
+        - meta_scope: string.quoted.double.c++
+        - match: '"'
+          scope: punctuation.definition.string.end.c++
+          pop: true
+        - include: string-escaped-char
+        - include: string-placeholder
+    - match: "(L|u8|u|U)?(')"
+      captures:
+        1: storage.type.string.c++
+        2: punctuation.definition.string.begin.c++
+      push:
+        - meta_scope: string.quoted.single.c++
+        - match: "'"
+          scope: punctuation.definition.string.end.c++
+          pop: true
+        - include: string-escaped-char
+    - include: raw-string-literals
+
+  string-escaped-char:
+    - match: '(\\)$\n'
+      captures:
+        1: punctuation.separator.continuation.c
+    - match: \\(?:\\|[abefnrtv\'"?]|[0-3][0-9]{0,2}|[4-7][0-9]?|x[a-fA-F0-9]+|u[a-fA-F0-9]{4}|U[a-fA-F0-9]{8})
+      scope: constant.character.escape.c
+    - match: \\.
+      scope: invalid.illegal.unknown-escape.c++
+
+  string-placeholder:
+    - match: |-
+        (?x)%
+          (\d+\$)?                                      # field (argument #)
+          [#0\- +']*                                    # flags
+          [,;:_]?                                       # separator character (AltiVec)
+          ((-?\d+)|\*(-?\d+\$)?)?                       # minimum field width
+          (\.((-?\d+)|\*(-?\d+\$)?)?)?                  # precision
+          (hh|h|ll|l|j|t|z|q|L|vh|vl|v|hv|hl)?          # length modifier
+          (\[[^\]]+\]|[am]s|[diouxXDOUeEfFgGaACcSspn%]) # conversion type
+      scope: constant.other.placeholder.c++
+
+  number-literals:
+    - match: |-
+        (?x:
+          \b({{dec_digits}})
+          (?:
+            ( (\.)
+              (?:
+                # 1.1, 1.1e1, 1.1e-1, 1.1f, 1.1e1f, 1.1e-1f, 1.1L, 1.1e1L, 1.1e-1L
+                {{dec_digit}}+ {{dec_exponent}}?
+                # 1.e1, 1.e-1, 1.e1f, 1.e-1f, 1.e1L, 1.e-1L
+                | {{dec_exponent}}
+                # 1., 1.f, 1.L # but not `..`
+                | (?!\.)
+              )
+              # 1e1 1e1f 1e1L
+              | {{dec_exponent}}
+            ) ({{dec_suffix}})?
+            # 1f
+            | ({{float_suffix}})
+          )
+          # .1, .1e1, .1e-1, .1f, .1e1f, .1e-1f, .1L, .1e1L, .1e-1L
+          | ( (\.) {{dec_digit}}+ {{dec_exponent}}? ) ({{dec_suffix}})?
+        )
+      scope: meta.number.float.decimal.c++
+      captures:
+        1: constant.numeric.value.c++
+        2: constant.numeric.value.c++
+        3: punctuation.separator.decimal.c++
+        4: constant.numeric.suffix.c++
+        5: constant.numeric.suffix.c++
+        6: constant.numeric.value.c++
+        7: punctuation.separator.decimal.c++
+        8: constant.numeric.suffix.c++
+
+    # hexadecimal float
+    - match: \b(0[xX])({{hex_digit}}*(\.){{hex_digit}}*{{hex_exponent}})({{dec_suffix}})?
+      scope: meta.number.float.hexadecimal.c++
+      captures:
+        1: constant.numeric.base.c++
+        2: constant.numeric.value.c++
+        3: punctuation.separator.decimal.c++
+        4: constant.numeric.suffix.c++
+
+    # https://en.cppreference.com/w/cpp/language/integer_literal
+
+    # hexadecimal integer
+    - match: \b(0[xX])({{hex_digit}}*)({{hex_suffix}})?
+      scope: meta.number.integer.hexadecimal.c++
+      captures:
+        1: constant.numeric.base.c++
+        2: constant.numeric.value.c++
+        3: constant.numeric.suffix.c++
+
+    # binary integer (C++14)
+    - match: \b(0[bB])({{bin_digit}}*)({{bin_suffix}})?
+      scope: meta.number.integer.binary.c++
+      captures:
+        1: constant.numeric.base.c++
+        2: constant.numeric.value.c++
+        3: constant.numeric.suffix.c++
+
+    # octal integer
+    - match: \b(0)({{oct_digit}}+)({{oct_suffix}})?
+      scope: meta.number.integer.octal.c++
+      captures:
+        1: constant.numeric.base.c++
+        2: constant.numeric.value.c++
+        3: constant.numeric.suffix.c++
+
+    # decimal integer
+    - match: \b({{dec_digits}})({{dec_suffix}})?
+      scope: meta.number.integer.decimal.c++
+      captures:
+        1: constant.numeric.value.c++
+        2: constant.numeric.suffix.c++
