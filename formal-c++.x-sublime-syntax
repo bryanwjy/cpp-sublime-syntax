@@ -946,42 +946,6 @@ contexts:
           scope: invalid.illegal.unexpected-character.c++
     - include: initializer-clause
 
-  lambda-expression-continue:
-    - match: '{'
-      scope: punctuation.definition.block.begin.c++
-      set:
-        - include: common-context-prefix
-        - meta_scope: meta.function.c++
-        - match: '}'
-          scope: punctuation.definition.block.end.c++
-          pop: true
-        - include: statement-seq
-    - include: lambda-declarator
-    - include: attribute-specifier-seq
-
-  lambda-expression:
-    - match: '\['
-      scope: punctuation.section.brackets.begin.c++
-      push:
-        - meta_scope: meta.lambda-expression.c++
-        - include: common-context-prefix
-        - match: '\]'
-          scope: punctuation.section.brackets.end.c++
-          set:
-            - match: '<'
-              scope: punctuation.definition.generic.begin meta.template.c++
-              set:
-                - include: common-context-prefix
-                - match: '>'
-                  scope: punctuation.definition.generic.end meta.template.c++
-                  set:
-                    - include: common-context-prefix
-                    - include: requires-clause
-                    - include: lambda-expression-continue
-                - include: template-argument-list
-            - include: lambda-expression-continue
-        - include: lambda-capture
-
   concept-name:
     - include: simple-template-id
 
