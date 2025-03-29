@@ -426,9 +426,6 @@ contexts:
           scope: invalid.illegal.unexpected-character.c++
           pop: true
 
-  # type-name:
-    # TODO
-
   unqualified-id:
     - match: '~'
       push:
@@ -1084,12 +1081,114 @@ contexts:
     - match: '\b(?:static|extern|mutable|thread_local)\b'
       scope: storage.modifier.c++
 
+  class-or-decltype-continue:
+    - include: common-context-prefix
+    - match: '\btemplate\b'
+      scope: keyword.declaration.c++
+      set:
+        - include: simple-template-id
+        - match: '(?=\S)'
+          pop: 2
+    - include: pack-index-specifier-access
+    - include: type-name
+    - include: computed-type-specifier
+    - match: '(?=\S)'
+      pop: 2
+
+  class-or-decltype-try:
+    - match: '(?=::)'
+      pop: true
+    - include: nested-name-specifier-prototype
+    - match: '(?=\S)'
+      fail: class-or-decltype-try-fail
+
+  base-specifier:
+    - include: attribute-specifier-seq
+    - match: '\bvirtual|public|private|protected\b'
+      scope: storage.modifier.c++
+    - match: '(?=\S)'
+      push:
+        - include: nested-name-specifier
+        - match: '(?=\S)'
+          branch_point: class-or-decltype-try-fail
+          branch:
+            - class-or-decltype-try
+            - class-or-decltype-continue
+
+  base-specifier-list:
+    - match: ','
+      scope: punctuation.separator.continuation.c++
+    - match: '\.\.\.'
+      scope: keyword.operator.variadic.c++
+    - include: base-specifier
+
+  base-clause:
+    - match: ':'
+      scope: punctuation.separator.c++
+      push:
+        - match: '(?={)'
+          pop: true
+        - include: base-specifier-list
+
+  class-property-specifier-seq:
+    - match: '\bfinal|trivially_relocatable_if_eligible|replaceable_if_eligible\b'
+      scope: storage.modifier.c++
+
+  class-specifier-after-class-head-name:
+    - include: common-context-prefix
+    - include: class-property-specifier-seq
+    - match: '{'
+      scope: punctuation.definition.block.begin.c++
+      set:
+        - include: common-context-prefix
+        - match: '}'
+          scope: punctuation.definition.block.end.c++
+          pop: 2
+        - include: member-specification
+    - include: base-clause
+
+  class-specifier-continue:
+    # This context pops itself on completion
+    - meta_content_scope: meta.class.c++
+    - match: '{{identifier}}'
+      scope: entity.name.class.c++
+      set:
+        - include: common-context-prefix
+        - match: '<'
+          scope: punctuation.definition.generic.begin.c++ meta.template.c++
+          set:
+            - include: common-context-prefix
+            - match: '>'
+              scope: punctuation.definition.generic.end.c++ meta.template.c++
+              set: class-specifier-after-class-head-name
+            - include: template-argument-list
+        - match: '(?=\S)' # not a simple-template-id
+          set: class-specifier-after-class-head-name
+    - match: '(?=)' # something strange is going on :S
+      pop: 2
+
+  class-specifier-try:
+    - match: '(?=::)'
+      pop: true
+    - include: nested-name-specifier-prototype
+    - match: '(?=\S)'
+      fail: class-specifier-try-fail
+
   class-specifier:
     - match: '\b(class)|(union)|(struct)\b'
       captures:
         1: keyword.declaration.class.c++
         2: keyword.declaration.union.c++
         3: keyword.declaration.struct.c++
+      push:
+        - include: common-context-prefix
+        - include: attribute-specifier-seq
+        - include: nested-name-specifier
+        - match: '(?=\S)'
+          branch_point: class-specifier-try-fail
+          branch:
+            - class-specifier-try
+            - class-specifier-continue
 
   opaque-enum-declaration-continue:
     # This context pops itself on completion
@@ -1157,17 +1256,6 @@ contexts:
       scope: entity.name.enum.c++
       set: 
         - include: common-context-prefix
-        - match: ':'
-          scope: punctuation.separator.c++
-          set: 
-            - include: type-specifier-seq
-            - match: '{'
-              scope: punctuation.definition.block.begin.c++
-              set:
-                - match: '}'
-                  scope: punctuation.definition.block.end.c++
-                  pop: 2
-                - include: enumerator-list
         - match: '{'
           scope: punctuation.definition.block.begin.c++
           set:
@@ -1175,6 +1263,12 @@ contexts:
               scope: punctuation.definition.block.end.c++
               pop: 2
             - include: enumerator-list
+        - match: ':'
+          scope: punctuation.separator.c++
+          push: 
+            - include: type-specifier-seq
+            - match: '(?={)'
+              pop: true
     - match: '(?=)' # something strange is going on :S
       pop: 2
 
