@@ -176,6 +176,14 @@ contexts:
       # Might be invalid character
       pop: 2
 
+  ptr-operator-try:
+    - match: '(?=::)'
+      pop: true
+    - match: '\*'
+      set: ptr-operator-continue
+    - match: '(?=\S)'
+      fail: ptr-operator-try-fail
+
   ptr-operator:
     - match: '\*'
       scope: keyword.modifier.address.c++
@@ -195,9 +203,9 @@ contexts:
       push:
         - include: nested-name-specifier
         - match: '(?=\S)'
-          branch_point: trailing-unqualified-id-reached
+          branch_point: ptr-operator-try-fail
           branch:
-            - try-parse-until-trailing-unqualified-id
+            - ptr-operator-try
             - ptr-operator-continue
 
   # parameters-and-qualifiers:
@@ -301,24 +309,7 @@ contexts:
         1: punctuation.accessor.double-colon.c++
         2: punctuation.accessor.double-colon.c++
 
-  try-parse-until-trailing-unqualified-id-2:
-    - match: '\.\.\.(?=\[)'
-      scope: keyword.operator.variadic.c++
-      set:
-        - match: '\['
-          scope: punctuation.section.brackets.begin.c++
-          set:
-            - include: common-context-prefix
-            - match: '\]'
-              scope: punctuation.section.brackets.end.c++
-              set:
-                - match: '(?=::)'
-                  pop: true
-                - match: '(?=\S)'
-                  fail: trailing-unqualified-id-reached
-            - include: constant-expression
-
-  try-parse-until-trailing-unqualified-id:
+  nested-name-specifier-prototype:
     # This context pops itself on success and fails with trailing-unqualified-id-reached
     # To be used in conjunction with nested-name-specifier
     - match: '\bdecltype\b'
@@ -331,11 +322,7 @@ contexts:
             - include: common-context-prefix
             - match: '\)'
               scope: meta.group.c++ punctuation.section.group.end.c++
-              set:
-                - match: '(?=::)'
-                  pop: true
-                - match: '(?=\S)'
-                  fail: trailing-unqualified-id-reached
+              pop: true
             - include: expression
         - match: '\S'
           scope: invalid.illegal.unexpected-character.c++
@@ -344,30 +331,29 @@ contexts:
       scope: keyword.declaration.c++
     - match: '{{identifier}}'
       captures:
-        1: punctuation.definition.generic.begin meta.template.c++
+        1: punctuation.definition.generic.begin.c++ meta.template.c++
       push:
         - include: common-context-prefix
-        - match: '<'
+        - match: '(\.\.\.)(\[)'
+          captures:
+            1: keyword.operator.variadic.c++
+            2: punctuation.section.brackets.begin.c++
           set:
-            - meta_scope: meta.template.argument-list.c++
+            - include: common-context-prefix
+            - match: '\]'
+              scope: punctuation.section.brackets.end.c++
+              pop: true
+            - include: constant-expression
+        - match: '<'
+          scope: punctuation.definition.generic.begin.c++ meta.template.c++
+          set:
             - include: common-context-prefix
             - match: '>'
-              scope: punctuation.definition.generic.end meta.template.c++
-              set:
-                - match: '(?=::)'
-                  pop: true
-                - include: try-parse-until-trailing-unqualified-id-2
-                - match: '(?=\S)'
-                  fail: trailing-unqualified-id-reached
+              scope: punctuation.definition.generic.end.c++ meta.template.c++
+              pop: true
             - include: template-argument-list
-        - match: '(?=::)'
-          pop: true
-        - include: try-parse-until-trailing-unqualified-id-2
         - match: '(?=\S)'
-          fail: trailing-unqualified-id-reached
-    - match: '(?=\S)'
-      # Some other character found, e.g. Foo::Bar::*
-      fail: trailing-unqualified-id-reached
+          pop: true
 
   literal-or-conversion-or-operator-function-id:
     - match: '\boperator\b'
@@ -458,11 +444,11 @@ contexts:
     - match: '(?=\boperator\b)'
       push:
         - match: '<'
-          scope: punctuation.definition.generic.begin meta.template.c++
+          scope: punctuation.definition.generic.begin.c++ meta.template.c++
           set:
             - include: common-context-prefix
             - match: '>'
-              scope: punctuation.definition.generic.end meta.template.c++
+              scope: punctuation.definition.generic.end.c++ meta.template.c++
               pop: true
             - include: template-argument-list
         - include: literal-or-conversion-or-operator-function-id
@@ -480,16 +466,23 @@ contexts:
     - match: '(?=\S)'
       pop: 2
 
+  qualified-id-try:
+    - match: '(?=::)'
+      pop: true
+    - include: nested-name-specifier-prototype
+    - match: '(?=\S)'
+      fail: qualified-id-try-fail
+
   qualified-id:
     - match: '{{nested-name-specifier-lookahead}}'
       push:
         # nested-name-specifier won't match decltype because there is not trailing '::'
         - include: nested-name-specifier
         - match: '(?=\S)'
-          branch_point: trailing-unqualified-id-reached
+          branch_point: qualified-id-try-fail
           branch:
             # pops once, which restarts nested-name-specifier
-            - try-parse-until-trailing-unqualified-id
+            - qualified-id-try
             # pops twice, to return to qualified-id context
             - qualified-id-continue
 
@@ -538,11 +531,11 @@ contexts:
       push:
         - include: common-context-prefix
         - match: '<'
-          scope: punctuation.definition.generic.begin meta.template.c++
+          scope: punctuation.definition.generic.begin.c++ meta.template.c++
           set:
             - include: common-context-prefix
             - match: '>'
-              scope: punctuation.definition.generic.end meta.template.c++
+              scope: punctuation.definition.generic.end.c++ meta.template.c++
               pop: true
             - include: template-argument-list
         - match: '(?=\S)'
@@ -594,6 +587,13 @@ contexts:
     - match: '(?=\S)'
       pop: 2
 
+  simple-type-specifier-try:
+    - match: '(?=::)'
+      pop: true
+    - include: nested-name-specifier-prototype
+    - match: '(?=\S)'
+      fail: simple-type-specifier-try-fail
+
   simple-type-specifier:
     - match: '\b(?:char(?:(?:8|16|32)_t)?|wchar_t|bool|short|int|long|signed|unsigned|float|double|void)\b'
       scope: storage.type.c++
@@ -611,10 +611,10 @@ contexts:
         # nested-name-specifier won't match decltype because there is not trailing '::'
         - include: nested-name-specifier
         - match: '(?=\S)'
-          branch_point: trailing-unqualified-id-reached
+          branch_point: simple-type-specifier-try-fail
           branch:
             # pops once, which restarts nested-name-specifier
-            - try-parse-until-trailing-unqualified-id
+            - simple-type-specifier-try
             # pops twice, to return to qualified-id context
             - simple-type-specifier-continue
 
@@ -630,6 +630,13 @@ contexts:
     - match: '(?=\S)'
       pop: 2
 
+  elaborated-type-specifier-try:
+    - match: '(?=::)'
+      pop: true
+    - include: nested-name-specifier-prototype
+    - match: '(?=\S)'
+      fail: elaborated-type-try-fail
+
   elaborated-type-specifier:
     - match: '\b(?:(class|union|struct)|(enum))\b'
       captures:
@@ -638,15 +645,27 @@ contexts:
       push:
         - meta_scope: meta.type-specifier.c++
         - include: common-context-prefix
-        - include: attribute-specifier-seq
+        - match: '(?=\[\[)'
+          push:
+          - include: attribute-specifier-seq
+          - match: '(?=\S)'
+            pop: true
         - include: nested-name-specifier
         - match: '(?=\S)'
-          branch_point: trailing-unqualified-id-reached
+          branch_point: elaborated-type-specifier-try-fail
           branch:
             # pops once, which restarts nested-name-specifier
-            - try-parse-until-trailing-unqualified-id
+            - elaborated-type-specifier-try
             # pops twice, to return to qualified-id context
             - nested-type-name-continue
+
+
+  typename-specifier-try:
+    - match: '(?=::)'
+      pop: true
+    - include: nested-name-specifier-prototype
+    - match: '(?=\S)'
+      fail: typename-specifier-try-fail
 
   typename-specifier:
     - match: '\btypename\b'
@@ -656,10 +675,10 @@ contexts:
         - include: common-context-prefix
         - include: nested-name-specifier
         - match: '(?=\S)'
-          branch_point: trailing-unqualified-id-reached
+          branch_point: typename-specifier-try-fail
           branch:
             # pops once, which restarts nested-name-specifier
-            - try-parse-until-trailing-unqualified-id
+            - typename-specifier-try
             # pops twice, to return to qualified-id context
             - nested-type-name-continue
 
@@ -957,15 +976,22 @@ contexts:
       scope: invalid.illegal.unexpected-character.c++
       pop: 2
 
+  type-constraint-try:
+    - match: '(?=::)'
+      pop: true
+    - include: nested-name-specifier-prototype
+    - match: '(?=\S)'
+      fail: type-constraint-try-fail
+
   type-constraint:
     - match: '{{nested-name-specifier-lookahead}}'
       push:
         - include: nested-name-specifier
         - match: '(?=\S)'
-          branch_point: trailing-unqualified-id-reached
+          branch_point: type-constraint-try-fail
           branch:
             # pops once, which restarts nested-name-specifier
-            - try-parse-until-trailing-unqualified-id
+            - type-constraint-try
             # pops twice, to return to qualified-id context
             - type-constraint-continue
 
@@ -1013,22 +1039,27 @@ contexts:
       pop: 2
     - include: type-name # also applies to concepts (through simple-template-id)    
 
+  type-requirement-try:
+    - match: '(?=::)'
+      pop: true
+    - include: nested-name-specifier-prototype
+    - match: '(?=\S)'
+      fail: type-requirement-try-fail
+
   type-requirement:
     - meta_content_scope: meta.requirement.type.c++
     - match: '\btypename\b'
       scope: keyword.declaration.typename.c++
       push:
         - include: common-context-prefix
+        - include: nested-name-specifier
         - match: '(?=\S)'
-          set:
-            - include: nested-name-specifier
-            - match: '(?=\S)'
-              branch_point: trailing-unqualified-id-reached
-              branch:
-                # pops once, which restarts nested-name-specifier
-                - try-parse-until-trailing-unqualified-id
-                # pops twice, to return to qualified-id context
-                - type-requirement-continue
+          branch_point: type-requirement-try-fail
+          branch:
+            # pops once, which restarts nested-name-specifier
+            - type-requirement-try
+            # pops twice, to return to qualified-id context
+            - type-requirement-continue
 
   requirement-seq:
     - match: '{'
@@ -1059,7 +1090,6 @@ contexts:
         1: keyword.declaration.class.c++
         2: keyword.declaration.union.c++
         3: keyword.declaration.struct.c++
-  # TODO
 
   opaque-enum-declaration-continue:
     # This context pops itself on completion
@@ -1081,6 +1111,13 @@ contexts:
     - match: '(?=)' # something strange is going on :S
       pop: 2
 
+  opaque-enum-declaration-try:
+    - match: '(?=::)'
+      pop: true
+    - include: nested-name-specifier-prototype
+    - match: '(?=\S)'
+      fail: opaque-enum-declaration-try-fail
+
   opaque-enum-declaration:
     - match: '\benum\b(?:\s+(?:class|struct)\b)?'
       scope: keyword.declaration.enum.c++
@@ -1090,9 +1127,9 @@ contexts:
           set:
             - include: nested-name-specifier
             - match: '(?=\S)'
-              branch_point: trailing-unqualified-id-reached
+              branch_point: opaque-enum-declaration-try-fail
               branch:
-                - try-parse-until-trailing-unqualified-id
+                - opaque-enum-declaration-try
                 - opaque-enum-declaration-continue
 
   enumerator-list:
@@ -1141,19 +1178,25 @@ contexts:
     - match: '(?=)' # something strange is going on :S
       pop: 2
 
+  enum-specifier-try:
+    - match: '(?=::)'
+      pop: true
+    - include: nested-name-specifier-prototype
+    - match: '(?=\S)'
+      fail: enum-specifier-try-fail
+
   enum-specifier:
     - match: '\benum\b(?:\s+class\b|struct\b)?'
       scope: keyword.declaration.enum.c++
       push:
+        - include: common-context-prefix
         - include: attribute-specifier-seq
-        - match: '{{nested-name-specifier-lookahead}}'
-          set:
-            - include: nested-name-specifier
-            - match: '(?=\S)'
-              branch_point: trailing-unqualified-id-reached
-              branch:
-                - try-parse-until-trailing-unqualified-id
-                - enum-specifier-continue
+        - include: nested-name-specifier
+        - match: '(?=\S)'
+          branch_point: enum-specifier-try-fail
+          branch:
+            - enum-specifier-try
+            - enum-specifier-continue
 
   defining-type-specifier-seq:
     - include: defining-type-specifier
