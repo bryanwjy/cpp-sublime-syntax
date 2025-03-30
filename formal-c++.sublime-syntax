@@ -99,13 +99,64 @@ contexts:
               pop: true
             - include: conditional-expression
 
-
   function-contract-specifier:
     - include: precondition-specifier
     - include: postcondition-specifier
 
   function-contract-specifier-seq:
     - include: function-contract-specifier
+
+  nested-name-specifier:
+    - match: '(?:(::)\s*)?(?:{{identifier}}\s*(::)\s*)*'
+      captures:
+        1: punctuation.accessor.double-colon.c++
+        2: punctuation.accessor.double-colon.c++
+
+  nested-name-specifier-prototype:
+    # This context pops itself on success and fails with trailing-unqualified-id-reached
+    # To be used in conjunction with nested-name-specifier
+    - match: '\bdecltype\b'
+      scope: keyword.operator.word.c++
+      push:
+        - include: common-context-prefix
+        - match: '\('
+          scope: meta.group.c++ punctuation.section.group.begin.c++
+          set:
+            - include: common-context-prefix
+            - match: '\)'
+              scope: meta.group.c++ punctuation.section.group.end.c++
+              pop: true
+            - include: expression
+        - match: '\S'
+          scope: invalid.illegal.unexpected-character.c++
+          pop: true # don't re-highlight the whole file
+    - match: '\btemplate\b'
+      scope: keyword.declaration.c++
+    - match: '{{identifier}}'
+      captures:
+        1: punctuation.definition.generic.begin.c++ meta.template.c++
+      push:
+        - include: common-context-prefix
+        - match: '(\.\.\.)(\[)'
+          captures:
+            1: keyword.operator.variadic.c++
+            2: punctuation.section.brackets.begin.c++
+          set:
+            - include: common-context-prefix
+            - match: '\]'
+              scope: punctuation.section.brackets.end.c++
+              pop: true
+            - include: constant-expression
+        - match: '<'
+          scope: punctuation.definition.generic.begin.c++ meta.template.c++
+          set:
+            - include: common-context-prefix
+            - match: '>'
+              scope: punctuation.definition.generic.end.c++ meta.template.c++
+              pop: true
+            - include: template-argument-list
+        - match: '(?=\S)'
+          pop: true
 
   init-declarator:
     - include: declarator
@@ -120,75 +171,55 @@ contexts:
     - match: ','
       scope: punctuation.separator.c++
 
+  # TODO: we need a few versions of declarators to set up the scopes and metas
+  # 1. Class Members
+  # 2. Function parameters
+  # 3. Template parameters
+  # 4. Variables
+
   declarator:
-    - include: ptr-declarator
-    - match: '\('
-      scope: meta.group.c++ punctuation.section.group.begin.c++
-      push:
-        - include: common-context-prefix
-        - match: '\)'
-          scope: meta.group.c++ punctuation.section.group.end.c++
-          set:
-            - include: common-context-prefix
-            - include: parameters-and-qualifiers-partial
-            - match: '->'
-              scope: punctuation.separator.c++
-              set:
-                - include: common-context-prefix
-                - include: type-id
-                - match: '(?=\S)'
-                  pop: true
-            - match: '(?=\S)'
-              pop: true
-        - include: parameter-declaration-clause
-        - include: ptr-declarator
+    - include: trailing-return-type
+    - include: ptr-declarator # implies noptr-declarator
 
   ptr-declarator:
-    - include: noptr-declarator-partial
-    - include: ptr-operator
-
-  noptr-declarator-partial:
-    - match: '\.\.\.'
-      scope: keyword.operator.variadic.c++
-    - match: '\[(?!\[)'
-      scope: punctuation.section.brackets.begin.c++
+    - match: '{{nested-name-specifier-lookahead}}'
       push:
-        - meta_scope: meta.declaration.array-extent.c++
-        - include: common-context-prefix
-        - match: '\]'
-          scope: punctuation.section.brackets.end.c++
-          set:
-            - include: common-context-prefix
-            - include: attribute-specifier-seq
-            - match: '(?=\S)'
-              pop: true
-        - include: constant-expression
-
-  ptr-operator-continue:
-    - match: '\*'
-      scope: keyword.modifier.address.c++
-      set:
-        - include: common-context-prefix
-        - include: cv-qualifier-seq
+        - include: nested-name-specifier
         - match: '(?=\S)'
-          pop: 2
-    - match: '(?=\S)'
-      # Might be invalid character
-      pop: 2
+          branch_point: ptr-to-member-try-fail
+          branch:
+            - ptr-to-member-try
+            - ptr-to-member-continue
+    - include: ptr-operator-partial
+    - include: noptr-declarator
 
-  ptr-operator-try:
+  ptr-to-member-try:
     - match: '(?=::)'
       pop: true
     - match: '\*'
-      set: ptr-operator-continue
+      scope: keyword.modifier.address.c++
+      set:
+        - include: ptr-declarator
+        - match: '(?\S)'
+          pop: 2
     - match: '(?=\S)'
-      fail: ptr-operator-try-fail
+      fail: ptr-to-member-try-fail
 
-  ptr-operator:
+  ptr-to-member-continue:
+    # since we tried and failed parsing nested-name-specifier
+    # After reverting back we know it's not a pointer to member
+    # so it must be an id-expression so delegate to noptr to
+    # consume the tokens before popping back out
+    - include: noptr-declarator
+    - match: '(?=\S)'
+      pop: 2
+
+  ptr-operator-partial:
     - match: '\*'
       scope: keyword.modifier.address.c++
       push:
         - include: common-context-prefix
+        - include: attribute-specifier-seq
         - include: cv-qualifier-seq
         - match: '(?=\S)'
           pop: true
@@ -199,23 +230,75 @@ contexts:
         - include: attribute-specifier-seq
         - match: '(?=\S)'
           pop: true
-    - match: '{{nested-name-specifier-lookahead}}'
-      push:
-        - include: nested-name-specifier
-        - match: '(?=\S)'
-          branch_point: ptr-operator-try-fail
-          branch:
-            - ptr-operator-try
-            - ptr-operator-continue
 
-  # parameters-and-qualifiers:
-  #   ( parameter-declaration-clause ) cv-qualifier-seq? ref-qualifier? noexcept-specifier? attribute-specifier-seq?
-  parameters-and-qualifiers-partial:
+  noptr-declarator:
+    # ( ptr-declarator ) pattern
+    - match: '\('
+      scope: meta.group.c++ punctuation.section.group.begin.c++
+      push:
+        - include: common-context-prefix
+        - match: '\)'
+          scope: meta.group.c++ punctuation.section.group.end.c++
+          pop: true
+        - include: ptr-declarator
+    - match: '(?=\S)'
+      push:
+        - include: attribute-specifier-seq
+        - include: declarator-id
+        - match: '(?=\()'
+          set:
+            - include: parameters-and-qualifiers
+            - match: '(?=\S)'
+              pop: true
+        - match: '\[(?!\[)'
+          scope: punctuation.section.brackets.begin.c++
+          push:
+            - meta_scope: meta.declaration.array-extent.c++
+            - include: common-context-prefix
+            - match: '\]'
+              scope: punctuation.section.brackets.end.c++
+              set:
+                - include: common-context-prefix
+                - include: attribute-specifier-seq
+                - match: '(?=\S)'
+                  pop: 2
+            - include: constant-expression
+
+  parameters-and-qualifiers:
+    - match: '\('
+      scope: meta.group.c++ punctuation.section.group.begin.c++
+      push:
+        - meta_content_scope: meta.function.parameter-list.c++
+        - include: common-context-prefix
+        - match: '\)'
+          scope: meta.group.c++ punctuation.section.group.end.c++
+          set:
+            - include: common-context-prefix
+            - include: function-qualifiers
+            - match: '(?=\S)'
+              pop: true
+        - include: parameter-declaration-clause
+
+  tailing-return-type:
+    - match: '->'
+      scope: punctuation.separator.c++
+      set:
+        - include: common-context-prefix
+        - include: type-id
+        - match: '(?=\S)'
+          pop: true
+
+  function-qualifiers:
     - include: cv-qualifier-seq
     - match: '&(?:&)?'
       scope: keyword.modifier.address.c++
     - include: noexcept-specifier
     - include: attribute-specifier-seq
+    
+  declarator-id:
+    - match: '\.\.\.'
+      scope: keyword.operator.variadic.c++
+    - include: id-expression
 
   # noptr-abstract-pack-declarator:
   #   noptr-abstract-pack-declarator parameters-and-qualifiers
@@ -271,7 +354,6 @@ contexts:
               pop: true
         - include: constant-expression
 
-
   # abstract-declarator:
   #   ptr-abstract-declarator
   #   noptr-abstract-declarator? parameters-and-qualifiers trailing-return-type
@@ -290,7 +372,7 @@ contexts:
           scope: meta.group.c++ punctuation.section.group.end.c++
           set:
             - include: common-context-prefix
-            - include: parameters-and-qualifiers-partial
+            - include: function-qualifiers
             - match: '->'
               scope: punctuation.separator.c++
               set:
@@ -302,58 +384,6 @@ contexts:
               pop: true
         - include: parameter-declaration-clause
         - include: ptr-abstract-declarator
-
-  nested-name-specifier:
-    - match: '(?:(::)\s*)?(?:{{identifier}}\s*(::)\s*)*'
-      captures:
-        1: punctuation.accessor.double-colon.c++
-        2: punctuation.accessor.double-colon.c++
-
-  nested-name-specifier-prototype:
-    # This context pops itself on success and fails with trailing-unqualified-id-reached
-    # To be used in conjunction with nested-name-specifier
-    - match: '\bdecltype\b'
-      scope: keyword.operator.word.c++
-      push:
-        - include: common-context-prefix
-        - match: '\('
-          scope: meta.group.c++ punctuation.section.group.begin.c++
-          set:
-            - include: common-context-prefix
-            - match: '\)'
-              scope: meta.group.c++ punctuation.section.group.end.c++
-              pop: true
-            - include: expression
-        - match: '\S'
-          scope: invalid.illegal.unexpected-character.c++
-          pop: true # don't re-highlight the whole file
-    - match: '\btemplate\b'
-      scope: keyword.declaration.c++
-    - match: '{{identifier}}'
-      captures:
-        1: punctuation.definition.generic.begin.c++ meta.template.c++
-      push:
-        - include: common-context-prefix
-        - match: '(\.\.\.)(\[)'
-          captures:
-            1: keyword.operator.variadic.c++
-            2: punctuation.section.brackets.begin.c++
-          set:
-            - include: common-context-prefix
-            - match: '\]'
-              scope: punctuation.section.brackets.end.c++
-              pop: true
-            - include: constant-expression
-        - match: '<'
-          scope: punctuation.definition.generic.begin.c++ meta.template.c++
-          set:
-            - include: common-context-prefix
-            - match: '>'
-              scope: punctuation.definition.generic.end.c++ meta.template.c++
-              pop: true
-            - include: template-argument-list
-        - match: '(?=\S)'
-          pop: true
 
   literal-or-conversion-or-operator-function-id:
     - match: '\boperator\b'
@@ -440,6 +470,7 @@ contexts:
     #   | conversion-function-id<template-argument-list>
     - match: '(?=\boperator\b)'
       push:
+        - meta_scope: meta.function.c++ entity.name.function.c++
         - match: '<'
           scope: punctuation.definition.generic.begin.c++ meta.template.c++
           set:
@@ -1080,6 +1111,37 @@ contexts:
   storage-class-specifier:
     - match: '\b(?:static|extern|mutable|thread_local)\b'
       scope: storage.modifier.c++
+
+  member-declarator:
+    - match: '\boverride|final\b'
+      scope: storage.modifier.c++
+    - include: function-contract-specifier-seq
+    - include: declarator
+
+  member-declarator-list:
+    - match: ','
+      scope: punctuation.separator.continuation.c++
+    - include: member-declarator
+
+  member-declaration:
+    - include: attribute-specifier-seq
+    - include: decl-specifier-seq
+    - match: ';'
+      scope: punctuation.terminator.c++
+    - include: member-declarator-list
+
+
+  member-specification:
+    - match: '\bpublic|private|protected\b'
+      scope: storage.modifier.c++
+      push:
+        - match: ':'
+          scope: punctuation.separator.c++
+          pop: true
+        - match: '\S'
+          scope: invalid.illegal.unexpected-character.c++
+          pop: true
+    - include: member-declaration
 
   class-or-decltype-continue:
     - include: common-context-prefix
