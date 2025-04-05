@@ -275,7 +275,9 @@ contexts:
   function-exception-specifier:
     - match: '\bnoexcept\b'
       scope: storage.modifier.c++
-      push:
+      set:
+        - match: '\s*(?=->|=|\{|requires\b)'
+          pop: true
         - include: preprocessor-workaround-eat-macro-before-identifier
         # TODO: add attributes
         - match: '\('
@@ -286,7 +288,7 @@ contexts:
               scope: meta.function-call.c++ meta.group.c++ punctuation.section.group.end.c++
               pop: true
             - include: expressions
-        - match: (?=\S)
+        - match: '(?=\S)'
           pop: true
 
   constructor-explicit-specifier:
